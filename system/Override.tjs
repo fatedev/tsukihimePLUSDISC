@@ -1,0 +1,1133 @@
+/*----------------------------------------------------------------------------/
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		KAGシステムのオーバーライド
+/----------------------------------------------------------------------------*/
+kagVersion	+= " TYPE-MOON Ver.";
+
+Scripts.execStorage("SystemMessages.tjs");
+Scripts.execStorage( "YesNoLayer.tjs" );
+Scripts.execStorage("AboutWindow.tjs");
+
+/*----------------------------------------------------------------------------/
+/	KAGWindow
+/----------------------------------------------------------------------------*/
+class KAGWindowTM extends KAGWindow
+{
+	var numBookMarks		= 20;
+	var bookmarkName		= "記憶";
+	var loadActionName		= "をたど";
+	var loadActionNameLast	= "らりるれろ";
+	var saveActionName		= "にのこ";
+	var saveActionNameLast	= "さしすせそ";
+
+	var thumbnailWidth		= 133;
+	var fullcolorThumbnail	= false;
+
+	//	システム設定
+	var globalVolume		= 100;	//	大域音量
+	var seVolume			= 100;	//	SE音量
+	var bgmVolume			= 100;	//	BGM音量
+
+	var effectSkip			= false;//	エフェクトを瞬間表示
+	var Ch2ndSkip			= true;	//	既読部分を飛ばす
+	var skipWithoutCheck	= false;//	確認無しに既読部分を飛ばす
+
+	var skipKey				= 1;	//	メッセージを早送りにするキー(Enter,Space/Ctrl/Shift)
+
+	var dispPopup			= true;	//	ポップアップメッセージを表示する
+	var ringPopup			= true;	//	ポップアップしたとき効果音を鳴らす
+
+	var doubleCushionMenuOpen	= true;//	右クリック何回でメニューを表示するか
+
+	//	システム状態記憶
+	var lastSavePage		= 0;	//	最後に使用したセーブデータページ
+//	var lastWindowLeft		= 0;	//	ウィンドウの座標
+//	var lastWindowTop		= 0;
+
+	//	既出用語
+	var alreadyKnownTerms	= %[];	//	シナリオに出てきたことのある用語
+
+	//	番号変換リスト
+	var convertSaveNoToFileNo	= [];	//	ファイル番号とセーブデータ番号の対応
+
+	function KAGWindowTM()
+	{
+		super.KAGWindow(...);
+		freeSaveDataMode	= false;	//	最初はtrueにしておいて、表示を変えておく
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function internalRestoreFlags(f, clear = true, elm = void)
+	{
+		// f から情報を読み出す
+		// clear が true ならばメッセージレイヤをクリアする
+		// se, bgm がそれぞれ true ならばその情報も反映させる
+		// backlay が true の場合は、表画面にロードすべきものを裏画面にロードする
+
+		// KAGWindow に関するもの
+		// ここの [start_restore_vars] から [end_restore_vars] で囲まれた部分は
+		// (略)
+		// [start_restore_vars]
+		quaking = f.quaking if f.quaking !== void;
+		quakeEndTick = f.quakeEndTick if f.quakeEndTick !== void;
+		quakeHorzMax = f.quakeHorzMax if f.quakeHorzMax !== void;
+		quakeVertMax = f.quakeVertMax if f.quakeVertMax !== void;
+		quakePhase = f.quakePhase if f.quakePhase !== void;
+		historyWriteEnabled = f.historyWriteEnabled if f.historyWriteEnabled !== void;
+		historyEnabled = f.historyEnabled if f.historyEnabled !== void;
+		numCharacterLayers = f.numCharacterLayers if f.numCharacterLayers !== void;
+		numMessageLayers = f.numMessageLayers if f.numMessageLayers !== void;
+		currentNum = f.currentNum if f.currentNum !== void;
+		currentPage = f.currentPage if f.currentPage !== void;
+		currentWithBack = f.currentWithBack if f.currentWithBack !== void;
+		chUserMode = f.chUserMode if f.chUserMode !== void;
+		chSpeed = f.chSpeed if f.chSpeed !== void;
+		actualChSpeed = f.actualChSpeed if f.actualChSpeed !== void;
+		beforeNoWaitActualChSpeed = f.beforeNoWaitActualChSpeed if f.beforeNoWaitActualChSpeed !== void;
+		beforeNoWaitChUserMode = f.beforeNoWaitChUserMode if f.beforeNoWaitChUserMode !== void;
+		clickSkipEnabled = f.clickSkipEnabled if f.clickSkipEnabled !== void;
+		nextSkipEnabled = f.nextSkipEnabled if f.nextSkipEnabled !== void;
+		canCancelSkipByClick = f.canCancelSkipByClick if f.canCancelSkipByClick !== void;
+		autoWCEnabled = f.autoWCEnabled if f.autoWCEnabled !== void;
+		autoWCChars = f.autoWCChars if f.autoWCChars !== void;
+		rightClickEnabled = f.rightClickEnabled if f.rightClickEnabled !== void;
+		rightClickCall = f.rightClickCall if f.rightClickCall !== void;
+		rightClickJump = f.rightClickJump if f.rightClickJump !== void;
+		rightClickTarget = f.rightClickTarget if f.rightClickTarget !== void;
+		rightClickStorage = f.rightClickStorage if f.rightClickStorage !== void;
+		rightClickName = f.rightClickName if f.rightClickName !== void;
+		rightClickCurrentMenuName = f.rightClickCurrentMenuName if f.rightClickCurrentMenuName !== void;
+		lastClickGlyphVisible = f.lastClickGlyphVisible if f.lastClickGlyphVisible !== void;
+		cursorDefault = f.cursorDefault if f.cursorDefault !== void;
+		cursorPointed = f.cursorPointed if f.cursorPointed !== void;
+		cursorWaitingClick = f.cursorWaitingClick if f.cursorWaitingClick !== void;
+		cursorDraggable = f.cursorDraggable if f.cursorDraggable !== void;
+		startAnchorEnabled = f.startAnchorEnabled if f.startAnchorEnabled !== void;
+		storeEnabled = f.storeEnabled if f.storeEnabled !== void;
+		restoreEnabled = f.restoreEnabled if f.restoreEnabled !== void;
+		currentLabel = f.currentLabel if f.currentLabel !== void;
+		currentPageName = f.currentPageName if f.currentPageName !== void;
+		// [end_restore_vars]
+
+		// perl スクリプトによって自動的に処理されないもの、いくつか。
+
+		// 自動ウェイト
+		autoWCWaits.assign(f.autoWCWaits) if f.autoWCWaits !== void;
+
+		// 背景レイヤ
+		var backlay = elm != void && elm.backlay != void && +elm.backlay;
+		if(backlay)
+		{
+			back.base.restore(f.foreBaseLayer);
+		}
+		else
+		{
+			fore.base.restore(f.foreBaseLayer);
+			back.base.restore(f.backBaseLayer);
+		}
+
+		// メッセージレイヤ
+		allocateMessageLayers(numMessageLayers);
+		if(backlay)
+		{
+			for(var i = 0; i < numMessageLayers; i++)
+			{
+				back.messages[i].restore(f.foreMessageLayers[i]);
+			}
+		}
+		else
+		{
+			for(var i = 0; i < numMessageLayers; i++)
+			{
+				fore.messages[i].restore(f.foreMessageLayers[i]);
+				back.messages[i].restore(f.backMessageLayers[i]);
+			}
+		}
+
+		if(clear)
+		{
+			for(var i = 0; i < numMessageLayers; i++)
+			{
+				fore.messages[i].clear();
+				back.messages[i].clear();
+			}
+			if(historyWriteEnabled) historyLayer.repage();	//	ロードしたら改ページする
+		}
+
+		// 前景レイヤ
+		allocateCharacterLayers(numCharacterLayers);
+		if(backlay)
+		{
+			for(var i = 0; i < numCharacterLayers; i++)
+			{
+				back.layers[i].restore(f.foreCharacterLayers[i]);
+			}
+		}
+		else
+		{
+			for(var i = 0; i < numCharacterLayers; i++)
+			{
+				fore.layers[i].restore(f.foreCharacterLayers[i]);
+				back.layers[i].restore(f.backCharacterLayers[i]);
+			}
+		}
+
+		// quake 関連
+		restoreQuake();
+
+		// bgm
+		if(elm === void || elm.bgm === void || +elm.bgm)
+		{
+			bgm.restore(f.bgm);
+		}
+
+		// 効果音
+		if(elm === void || elm.se === void || +elm.se)
+		{
+			for(var i = 0; i<numSEBuffers; i++)
+			{
+				se[i].restore(f.se[i]);
+			}
+		}
+
+		// ウィンドウキャプション
+		caption = f.caption;
+		System.title = caption;
+
+		// current の設定し直し
+		current = (currentPage?back:fore).messages[currentNum];
+
+		// 右クリックメニュー名
+		if(typeof this.rightClickMenuItem != "undefined")
+			rightClickMenuItem.caption = rightClickCurrentMenuName;
+
+		// restoreHook
+		forEachEventHook('onRestore',
+			function(handler, f) { handler(f.flags, f.clear, f.options); } incontextof this,
+			%[flags:f, clear:clear, options:elm]);
+
+	}
+
+	function calcThumbnailSize()
+	{
+		// サムネイルのサイズを計算する
+		// 横幅は thumbnailWidth に
+		var ratio = scHeight / scWidth;
+		var w = thumbnailWidth;
+		var h = (int)(w * ratio);
+
+		// サムネイル用ビットマップのサイズを計算
+		var size;
+		if(fullcolorThumbnail)
+			size = ((((w - 1) >> 2) + 1) << 2) * h * 3 + 54;
+		else
+			size = 
+			((((w - 1) >> 2) + 1) << 2) * h +
+				1024 + 54;
+		return %[width : w, height : h, size : size];
+	}
+
+	function setSystemStateFromSystemVariables()
+	{
+		//	退避していた情報を復帰させる
+		super.setSystemStateFromSystemVariables(...);
+
+		globalVolume = scflags.globalVolume if scflags.globalVolume !== void;
+		seVolume = scflags.seVolume if scflags.seVolume !== void;
+		bgmVolume = scflags.bgmVolume if scflags.bgmVolume !== void;
+
+		effectSkip = scflags.effectSkip if scflags.effectSkip !== void;
+		Ch2ndSkip = scflags.Ch2ndSkip if scflags.Ch2ndSkip !== void;
+		skipWithoutCheck = scflags.skipWithoutCheck if scflags.skipWithoutCheck !== void;
+		skipKey = scflags.skipKey if scflags.skipKey !== void;
+
+		dispPopup = scflags.dispPopup if scflags.dispPopup !== void;
+		ringPopup = scflags.ringPopup if scflags.ringPopup !== void;
+
+		doubleCushionMenuOpen = scflags.doubleCushionMenuOpen if scflags.doubleCushionMenuOpen !== void;
+
+		lastSavePage = scflags.lastSavePage if scflags.lastSavePage !== void;
+
+		alreadyKnownTerms	= scflags.alreadyKnownTerms if scflags.alreadyKnownTerms !== void;
+
+		convertSaveNoToFileNo	= scflags.convertSaveNoToFileNo if scflags.convertSaveNoToFileNo !== void;
+
+		//	ウィンドウ位置の復帰
+		left = scflags.lastWindowLeft if scflags.lastWindowLeft !== void;
+		top = scflags.lastWindowTop if scflags.lastWindowTop !== void;
+
+		//	設定を反映する
+		setVolume();
+	}
+
+	function saveSystemVariables()
+	{
+		dm("left, top = "+left+", "+top);
+
+		//	現在の設定を退避する
+		scflags.globalVolume= globalVolume;
+		scflags.seVolume	= seVolume;
+		scflags.bgmVolume	= bgmVolume;
+
+		scflags.effectSkip		= effectSkip;
+		scflags.Ch2ndSkip		= Ch2ndSkip;
+		scflags.skipWithoutCheck= skipWithoutCheck;
+
+		scflags.skipKey		= skipKey;
+
+		scflags.dispPopup	= dispPopup;
+		scflags.ringPopup	= ringPopup;
+
+		scflags.doubleCushionMenuOpen	= doubleCushionMenuOpen;
+
+		scflags.lastSavePage	= lastSavePage;
+
+		scflags.alreadyKnownTerms	= alreadyKnownTerms;
+
+		scflags.convertSaveNoToFileNo	= convertSaveNoToFileNo;
+
+		//	ウィンドウ位置の記録
+		scflags.lastWindowLeft	= left;
+		scflags.lastWindowTop	= top;
+
+		super.saveSystemVariables(...);
+	}
+
+	function setVolume()
+	{
+		//	BGM,SEの大域音量を更新する
+		var bgmVol	= int(bgmVolume * globalVolume / 100);
+		var seVol	= int(seVolume * globalVolume / 100);
+		bgm.setOptions(%["gvolume" => bgmVol]);
+		for(var i = 0; i < numSEBuffers; i++)
+			se[i].setOptions(%["gvolume" => seVol]);
+
+		dm("BGM音量: "+bgmVol+" %");
+		dm("SE音量: "+seVol+" %");
+	}
+
+	function saveBookMarkToFile(fn, savehist = true)
+	{
+		// ファイル fn に栞を保存する
+		if(readOnlyMode) return false;
+		pcflags.storeTime = (new Date()).getTime(); // 日付を保存
+
+		// セーブデータをまとめる
+		var data = %[];
+		data.id = saveDataID;
+		data.core = pcflags;
+		data.user = pflags;
+		if(savehist) data.history = historyOfStore;
+
+		if(saveThumbnail)
+		{
+			// サムネイルを保存
+			lockSnapshot();
+			try
+			{
+				// サムネイルのサイズまで縮小
+				var size = calcThumbnailSize();
+				var tmp = new Layer(this, primaryLayer);
+				try
+				{
+					tmp.setImageSize(size.width, size.height);
+					tmp.face = dfBoth;
+					tmp.stretchCopy(0, 0, size.width, size.height, snapshotLayer,
+						0, 0, snapshotLayer.imageWidth, snapshotLayer.imageHeight, stLinear);
+					/*
+					// サムネイル画像をセピア調にして保存する場合はここをコメントアウト
+					tmp.doGrayScale();
+					tmp.adjustGamma(
+									1.3, 0, 255,  // R gamma, floor, ceil
+									1.0, 0, 255,  // G gamma, floor, ceil
+									0.8, 0, 255); // B gamma, floor, ceil
+					*/
+					try
+					{
+						if(fullcolorThumbnail)
+							tmp.saveLayerImage(fn, "bmp24");
+						else
+							tmp.saveLayerImage(fn, "bmp8");
+
+						// データを保存
+						var mode = saveDataMode;
+						mode += "o" + size.size; // モード文字列に 書き込みオフセットを指定
+						(Dictionary.saveStruct incontextof data)(fn, mode);
+					}
+					catch(e)
+					{
+						System.inform("ファイルに保存できません (ファイルを開けないか、"
+							"書き込み禁止です)");
+						return false;
+					}
+				}
+				catch(e)
+				{
+					invalidate tmp;
+					throw e;
+				}
+				invalidate tmp;
+			}
+			catch(e)
+			{
+				unlockSnapshot();
+				throw e;
+			}
+			unlockSnapshot();
+		}
+		else
+		{
+			// 通常のファイルに保存
+			try
+			{
+				(Dictionary.saveStruct incontextof data)(fn, saveDataMode);
+			}
+			catch(e)
+			{
+				System.inform("ファイルに保存できません (ファイルを開けないか、"
+					"書き込み禁止です)");
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	function loadBookMarkFromFile(fn, loaduser = true)
+	{
+		// ファイル fn から栞を読み込む
+		// loaduser が false の時は user を読み込まない
+		try
+		{
+			if(!Storages.isExistentStorage(fn)) return false; //ファイルがない
+
+			var data;
+
+			var modestr;
+
+			if(saveThumbnail)
+			{
+				// 指定オフセットからデータを読み込む
+				modestr += "o" + calcThumbnailSize().size;
+			}
+
+			data = Scripts.evalStorage(fn, modestr);
+
+			if(data.id != saveDataID)
+			{
+				System.inform("他のシステムのデータを読み込もうとしました", "エラー");
+				return false;
+			}
+
+			pcflags = data.core;
+			pcflags = %[] if pcflags === void;
+			if(loaduser)
+			{
+				pflags = data.user;
+				pflags = %[] if pflags === void;
+			}
+			else
+			{
+				(Dictionary.assignStruct incontextof pflags)(flags);
+			}
+			historyOfStore = data.history;
+			historyOfStore = [] if historyOfStore === void;
+		}
+		catch(e)
+		{
+			throw new Exception(bookmarkName+"を読み込めないか、あるいは"+bookmarkName+"が"
+				"壊れています(" + e.message + ")");
+		}
+
+		restoreFlags();
+		return true;
+	}
+
+	function saveBookMarkWithAsk(num, func=void)
+	{
+		// 栞番号 num に栞を設定する
+		num = +num;	dm("save: "+num);
+		// そのとき、設定するかどうかをたずねる
+		if(readOnlyMode) return false;
+		if(bookMarkProtectedStates[num]) return false;
+		var prompt;
+//		prompt = bookmarkName+" ";
+//		if(num < numBookMarks) prompt += (num + 1);
+		if(bookMarkDates[num] != "") // bookMarkDates が空文字の場合は栞は存在しない
+			prompt += "「" + bookMarkNames[num] + "」\n[記録日時:"+bookMarkDates[num]+"]に\n";
+		else
+		{
+			//	上書きしないときは保存するか聞く必要が無い
+			saveBookMarkAskOk(true, num, func);
+			return;
+		}
+		prompt += "「"+ pcflags.currentPageName + "」"+saveActionName+saveActionNameLast.substring(1,1)+"ますか?";
+//		var result = askYesNo(prompt);
+//		if(result) return saveBookMark(num);
+//		return false;
+		askYesNo2(prompt, saveBookMarkAskOk, num, func);
+	}
+	function saveBookMarkAskOk(result, num, func=void)
+	{
+		if(result)
+		{
+//			release(yesnolayer);
+			saveBookMark(num);
+			func() if func != void;
+		}
+	}
+
+	function loadBookMarkWithAsk(num, func=void)
+	{
+		// 栞番号 num から栞を読み出す
+		num = +num;	dm("load: "+num);
+		// そのとき、読み出すかどうかをたずねる
+		if(num < numBookMarks && bookMarkDates[num] == "") // bookMarkDates が空文字の場合は栞は存在しない
+			return false;
+		var prompt;
+//		prompt = bookmarkName+" ";
+//		if(num < numBookMarks) prompt += (num + 1);
+		prompt += "「"+ bookMarkNames[num] + "」\n[記録日時:"+bookMarkDates[num]+"]\n"+loadActionName+loadActionNameLast.substring(1,1)+"ますか?";
+//		var result = askYesNo(prompt);
+//		if(result) return loadBookMark(num);
+//		return false;
+		askYesNo2(prompt, loadBookMarkAskOk, num, func);
+	}
+	function loadBookMarkAskOk(result, num, func=void)
+	{
+		if(result)
+		{
+//			release(yesnolayer);
+			loadBookMark(num);
+			func() if func != void;
+		}
+	}
+
+	function eraseBookMarkWithAsk(num, func=void)
+	{
+		// 栞番号 num を削除する
+		num = +num;	dm("erase: "+num);
+		// そのとき、削除しても良いかをたずねる
+		if(num < numBookMarks && bookMarkDates[num] == "")
+			return false;
+		var prompt;
+//		prompt = bookmarkName+" ";
+//		if(num < numBookMarks) prompt += (num + 1);
+		prompt += "「"+ bookMarkNames[num] + "」\n[記録日時:"+bookMarkDates[num]+"]を削除しますか？";
+//		var result = askYesNo(prompt);
+//		if(result) return eraseBookMark(num);
+//		return false;
+		askYesNo2(prompt, eraseBookMarkAskOk, num, func);
+	}
+	function eraseBookMarkAskOk(result, num, func=void)
+	{
+		if(result)
+		{
+//			release(yesnolayer);
+			eraseBookMark(num);
+			func() if func != void;
+
+			//	内部情報をクリア
+			bookMarkNames[num] = void;
+			bookMarkDates[num] = void;
+			bookMarkProtectedStates[num] = false;
+			scflags.bookMarkComments[num] = void;
+		}
+	}
+/*
+	function onKeyDown(key, shift, process=true)
+	{
+		if( typeof acceptInputEventLayer == "Object" &&
+			typeof acceptInputEventLayer.onKeyDown != "undefined")
+		{
+			//	キーメッセージを受け付けるレイヤーへ
+			acceptInputEventLayer.onKeyDown(...);
+		}
+		else if(focusedLayer === null)
+			internalOnKeyDown(key, shift);
+		super.onKeyDown(...);
+	}
+
+	function onKeyUp(key, shift, process=true)
+	{
+		if( typeof acceptInputEventLayer == "Object" &&
+			typeof acceptInputEventLayer.onKeyUp != "undefined")
+		{
+			//	キーメッセージを受け付けるレイヤーへ
+			acceptInputEventLayer.onKeyUp(key, shift, process);
+		}
+		super.onKeyUp(...);
+	}
+*/
+	function onMouseWheel(shift, delta, x, y)
+	{
+		// ホイールが回転した
+		global.Window.onMouseWheel(...);
+//		dm("acceptInputEventLayer = "+(typeof acceptInputEventLayer));
+//		dm("acceptInputEventLayer.onMouseWheel = "+(typeof acceptInputEventLayer.onMouseWheel));
+		if(focusedLayer === null)
+		{
+			if(!historyLayer.visible)
+			{
+				if(delta > 0)
+					showHistoryByKey(); // メッセージ履歴を表示
+				else if(System.getTickCount() - lastHistoryHiddenTick > 150) 
+						onPrimaryClick(); // クリックをエミュレート
+				// ↑ tick を比較しているのは、メッセージ履歴を隠す操作とホイールを
+				// 手前に回す操作が連続した場合に勝手に読み進むのをある程度防ぐ仕掛け
+			}
+			else
+			{
+				// メッセージ履歴にイベントを垂れ流す
+				historyLayer.windowMouseWheel(shift, delta, x, y);
+			}
+		}
+		else if(focusedLayer === historyLayer)
+			//	メッセージ履歴にフォーカスが移っているなら、イベントを送る
+			historyLayer.windowMouseWheel(shift, delta, x, y);
+		else if(typeof focusedLayer.onMouseWheel != "undefined")
+			focusedLayer.onMouseWheel(...);
+	}
+
+	function onKeyDown(key, shift)
+	{
+//		dm("on key down. "+key+" / "+shift);
+
+		//	優先度の高いキー入力
+		if(key == VK_RETURN && (shift & ssAlt))
+		{
+			//	Alt + Enter: ウィンドウ<->フルスクリーン切り替え
+			dm("change screen mode.");
+			if(fullScreened)
+				onWindowedMenuItemClick();
+			else
+				onFullScreenMenuItemClick();
+		}
+		else if(key == #'X' && (shift & ssCtrl))
+		{
+			//	Ctrl + X: ゲーム終了
+			onCloseQuery();
+		}
+		else
+		{
+			if(focusedLayer === null)
+				internalOnKeyDown(key, shift);
+		}
+	}
+
+	function internalOnKeyDown(key, shift)
+	{
+		if(!callHook(keyDownHook, key, shift))
+		{
+			if(checkProceedingKey(key, shift)) return;
+
+			if(key == #'F')
+			{
+				// 次の選択肢/未読まで進む
+				skipToNextStopByKey();
+				return;
+			}
+
+			if(key == #'B')
+			{
+				// 前に戻る
+				goBackByKey();
+				return;
+			}
+
+			if(key == #'A')
+			{
+				// 自動的に読み勧める
+				switchAutoModeByKey();
+				return;
+			}
+
+			if(freeSaveDataMode)
+			{
+				if(key == #'S')
+				{
+					// 栞をはさむ
+					if(typeof this.storeMenu != "undefined" && storeMenu.enabled)
+						storeMenu.click();
+					return;
+				}
+
+				if(key == #'L')
+				{
+					// 栞をたどる
+					if(typeof this.restoreMenu != "undefined" && restoreMenu.enabled)
+						restoreMenu.click();
+					return;
+				}
+			}
+
+//			if(key == #'R' || (key == VK_UP && (shift & ssShift)))
+//			if(key == #'R' || key== VK_UP || key==VK_PRIOR)
+			if(key == #'R')
+			{
+				// メッセージ履歴を表示
+				showHistoryByKey();
+				return;
+			}
+
+			if(isKeyOfSub(key))
+			{//	BackSpaceやDeleteキーにもESCと同じ役割を与える
+				// メッセージを消す
+				if(typeof this.rightClickMenuItem != "undefined" &&
+					rightClickMenuItem.enabled)
+				{
+					rightClickMenuItem.click(); // クリックをエミュレート
+					return;
+				}
+			}
+		}
+	}
+
+	function checkProceedingKey(key, shift)
+	{
+		// key が読みすすみのキーの場合はキーを処理し、
+		// true を返す。そうでなければ false を返す
+		if(skipKey<2)
+		{
+			if(isKeyOfPrimary(key))
+			{
+				if((shift & ssRepeat) && clickSkipEnabled && 
+					conductor.status == conductor.mRun)
+				{
+					dm("key repeat.");
+					// キーリピート
+					if(skipMode != 4 && skipKeyRepressed)
+						skipToStop2(); // まだskipMode 4に入っていない場合は早送りモードに入る
+					// skipKeyRepressed をチェックするのは
+					// 連続してキーリピートが発生しているときに
+					// cancelSkip 後にスキップに突入するのを防ぐため
+				}
+				else
+				{
+					dm("key press.");
+					skipKeyRepressed = true;
+					onPrimaryClickByKey();
+				}
+				return true;
+			}
+		}
+		else
+		{
+			var greetkey = [ ,, VK_CONTROL, VK_SHIFT ];
+			if(key == greetkey[skipKey])
+			{
+				skipToStop2();
+				return true;
+			}
+			else if(isKeyOfPrimary(key) && (!(shift & ssRepeat)))
+			{
+				//	CtrlやShiftの時も、ReturnやSpaceの押下は有効
+				onPrimaryClickByKey();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function skipKeyPressing()
+	{
+		if(skipKey<2)
+			// VK_RETURN あるいは VK_SPACE が押されているかどうか
+			return System.getKeyState(VK_RETURN) || System.getKeyState(VK_SPACE) || System.getKeyState(VK_DOWN);
+		else if(skipKey<3)
+			return System.getKeyState(VK_CONTROL);
+		else if(skipKey<4)
+			return System.getKeyState(VK_SHIFT);
+	}
+
+	function isKeyOfPrimary(key)
+	{
+		//	ここに書いてあるキーが押されると、先に進む
+		//		Enter, ↓キー, Space
+		return key==VK_RETURN || key==VK_SPACE || key==VK_DOWN;
+	}
+
+	function isKeyOfSub(key)
+	{
+		//	キャンセルしたりサブメニューを開くキー
+		//		Escape, Home
+		return key==VK_ESCAPE || key==VK_HOME;
+	}
+
+	function getHandlers()
+	{
+		var funcs = super.getHandlers();	//	本来の命令群を取り出す
+
+		///	追加命令 ///
+/*		funcs["exbutton"] = function(elm)
+		{
+			// グラフィカルボタン
+			if(currentWithBack) current.comp.addExButton(elm);
+			current.addExButton(elm);
+			return 0;
+		} incontextof this;
+*/
+		return funcs;
+	}
+
+	function onHelpAboutMenuItemClick(sender)
+	{
+		// 「このソフトについて」ウィンドウを表示
+//		var win = new global.KAGWindow(false, aboutWidth, aboutHeight);
+		var win = new global.AboutWindow();
+		win.setPos(left + ((width - win.width)>>1), top + ((height - win.height)>>1));
+//		win.process('about.ks' ,,, true); // about.ks を immediate で表示
+		win.showModal(); // モード付きで表示
+		invalidate win;
+	}
+
+	function onCloseQuery()
+	{
+		saveSystemVariables();
+		if(!askOnClose) { global.Window.onCloseQuery(true); return; }
+		MYaskYesNo(this, fore.base, SMsg_exitGame, MYclose);
+	}
+
+	function MYclose(result)
+	{
+		global.Window.onCloseQuery(result);
+	}
+
+	function askYesNo2(msg, func, arg1, arg2)
+	{
+		MYaskYesNo(this, fore.base, msg, func, arg1, arg2);
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	Menus
+/----------------------------------------------------------------------------*/
+@if(0)
+KAGWindow_createMenus	= function()
+{
+	// この関数は MainWindow クラスのオブジェクトのコンテキスト上で実行されます
+
+	menu.add(this.systemMenu = new KAGMenuItem(this, "システム(&S)", 0, "", false));
+
+	systemMenu.add(this.rightClickMenuItem = new KAGMenuItem(this, "メッセージを消す(&S)", 0,
+		onRightClickMenuItemClick, false));
+
+	systemMenu.add(this.showHistoryMenuItem = new KAGMenuItem(this, "メッセージ履歴の表示(&H)", 0,
+		onShowHistoryMenuItemClick, false));
+
+	systemMenu.add(this.skipToNextStopMenuItem = new KAGMenuItem(this,
+		autoRecordPageShowing?"次の選択肢/未読まで進む(&F)":"次の選択肢まで進む(&F)", 0,
+		onSkipToNextStopMenuItemClick, false));
+
+	systemMenu.add(this.autoModeMenuItem = new KAGMenuItem(this, "自動的に読み進む(&A)", 0,
+		onAutoModeMenuItemClick, false));
+
+	systemMenu.add(this.autoModeWaitMenu = new KAGMenuItem(this, "自動的に読み進むウェイト(&D)", 0,
+		void, false));
+
+		autoModeWaitMenu.add(this.autoModeFastMenuItem = new KAGMenuItem(this, "短い(&1)", 1,
+			onAutoModeWaitMenuClick, false));
+		autoModeFastMenuItem.wait = autoModePageWaits.fast;
+		autoModeFastMenuItem.lwait = autoModeLineWaits.fast;
+		autoModeWaitMenu.add(this.autoModeFasterMenuItem = new KAGMenuItem(this, "やや短い(&2)", 1,
+			onAutoModeWaitMenuClick, false));
+		autoModeFasterMenuItem.wait = autoModePageWaits.faster;
+		autoModeFasterMenuItem.lwait = autoModeLineWaits.faster;
+		autoModeWaitMenu.add(this.autoModeMediumMenuItem = new KAGMenuItem(this, "普通(&3)", 1,
+			onAutoModeWaitMenuClick, false));
+		autoModeMediumMenuItem.wait = autoModePageWaits.medium;
+		autoModeMediumMenuItem.lwait = autoModeLineWaits.medium;
+		autoModeWaitMenu.add(this.autoModeSlowerMenuItem = new KAGMenuItem(this, "やや長い(&4)", 1,
+			onAutoModeWaitMenuClick, false));
+		autoModeSlowerMenuItem.wait = autoModePageWaits.slower;
+		autoModeSlowerMenuItem.lwait = autoModeLineWaits.slower;
+		autoModeWaitMenu.add(this.autoModeSlowMenuItem = new KAGMenuItem(this, "長い(&5)", 1,
+			onAutoModeWaitMenuClick, false));
+		autoModeSlowMenuItem.wait = autoModePageWaits.slow;
+		autoModeSlowMenuItem.lwait = autoModeLineWaits.slow;
+
+	systemMenu.add(new MenuItem(this, "-"));
+
+	systemMenu.add(this.goBackMenuItem = new KAGMenuItem(this, "前に戻る(&B)", 0,
+		onBackStartMenuItemClick, false));
+
+	systemMenu.add(this.goToStartMenuItem = new KAGMenuItem(this, "最初に戻る(&R)", 0,
+		onGoToStartMenuItemClick, false));
+
+	systemMenu.add(new MenuItem(this, "-"));
+
+	systemMenu.add(this.exitMenuItem = new KAGMenuItem(this, "終了(&X)", 0, onExitMenuItemClick, false));
+
+	menu.add(this.characterMenu = new KAGMenuItem(this, "文字表示(&C)", 0, void, false));
+
+		characterMenu.add(this.chSpeedMenu = new KAGMenuItem(this, "表示速度(&C)", 0, void, false));
+
+			chSpeedMenu.add(this.chNoWaitMenuItem = new KAGMenuItem(this, "ノーウェイト(&W)", 1,
+				onChSpeedMenuItemClick, false));
+			chNoWaitMenuItem.speed = 0;
+			chSpeedMenu.add(this.chFastMenuItem = new KAGMenuItem(this, "高速(&F)", 1,
+				onChSpeedMenuItemClick, false));
+			chFastMenuItem.speed = chSpeeds.fast;
+			chSpeedMenu.add(this.chNormalMenuItem = new KAGMenuItem(this, "普通(&N)", 1,
+				onChSpeedMenuItemClick, false));
+			chNormalMenuItem.speed = chSpeeds.normal;
+			chSpeedMenu.add(this.chSlowMenuItem = new KAGMenuItem(this, "遅い(&S)", 1,
+				onChSpeedMenuItemClick, false));
+			chSlowMenuItem.speed = chSpeeds.slow;
+
+			chSpeedMenu.add(new MenuItem(this, "-"));
+
+			chSpeedMenu.add(this.chNonStopToPageBreakItem = new KAGMenuItem(this, "ページ末まで一気に(&P)", 0,
+				onChNonStopToPageBreakItemClick, false));
+
+		characterMenu.add(this.ch2ndSpeedMenu = new KAGMenuItem(this, "一度読んだところは(&I)", 0, void, false));
+
+			ch2ndSpeedMenu.add(this.ch2ndNoWaitMenuItem = new KAGMenuItem(this, "ノーウェイト(&W)", 1,
+				onCh2ndSpeedMenuItemClick, false));
+			ch2ndNoWaitMenuItem.speed = 0;
+			ch2ndSpeedMenu.add(this.ch2ndFastMenuItem = new KAGMenuItem(this, "高速(&F)", 1,
+				onCh2ndSpeedMenuItemClick, false));
+			ch2ndFastMenuItem.speed = chSpeeds.fast;
+			ch2ndSpeedMenu.add(this.ch2ndNormalMenuItem = new KAGMenuItem(this, "普通(&N)", 1,
+				onCh2ndSpeedMenuItemClick, false));
+			ch2ndNormalMenuItem.speed = chSpeeds.normal;
+			ch2ndSpeedMenu.add(this.ch2ndNoChangeMenuItem = new KAGMenuItem(this, "変えない(&M)", 1,
+				onCh2ndSpeedMenuItemClick, false));
+			ch2ndNoChangeMenuItem.speed = -1; // 変えない
+
+			ch2ndSpeedMenu.add(new MenuItem(this, "-"));
+
+			ch2ndSpeedMenu.add(this.ch2ndNonStopToPageBreakItem = new KAGMenuItem(this, "ページ末まで一気に(&P)", 0,
+				onCh2ndNonStopToPageBreakItemClick, false));
+
+		characterMenu.add(new MenuItem(this, "-"));
+
+		characterMenu.add(this.chAntialiasMenuItem = new KAGMenuItem(this, "アンチエイリアス(&A)", 0,
+			onChAntialiasMenuItemClick, false));
+
+		characterMenu.add(this.chChangeFontMenuItem = new KAGMenuItem(this, "フォント(&D) ...", 0,
+			onChChangeFontMenuItem, false));
+
+//	if(freeSaveDataMode)
+//	{
+		menu.add(this.bookmarkMenu = new KAGMenuItem(this, this.bookmarkName+"(&J)", 0, "", false));
+			bookmarkMenu.add(this.restoreMenu = new KAGMenuItem(this, this.bookmarkName+this.loadActionName+this.loadActionNameLast.substring(2,1)+"(&L)", 0, void, false));
+			bookmarkMenu.add(this.storeMenu = new KAGMenuItem(this, this.bookmarkName+this.saveActionName+this.saveActionNameLast.substring(2,1)+"(&S)", 0, void, false));
+/*	}
+	else
+	{
+		menu.add(this.restoreMenu = new KAGMenuItem(this, bookmarkName+loadActionName+loadActionNameLast.substring(2,1)+"(&J)", 0, onRestoreMenuClick, false));
+		menu.add(this.storeMenu = new KAGMenuItem(this, bookmarkName+saveActionName+saveActionNameLast.substring(2,1)+"(&M)", 0, onStoreMenuClick, false));
+	}
+*/
+	menu.add(this.displayMenu = new KAGMenuItem(this, "画面(&V)", 0, void, false));
+
+		displayMenu.add(this.windowedMenuItem = new KAGMenuItem(this, "ウィンドウ表示(&W)", 1,
+			onWindowedMenuItemClick, false));
+		displayMenu.add(this.fullScreenMenuItem = new KAGMenuItem(this, "フルスクリーン(&F)", 1,
+			onFullScreenMenuItemClick, false));
+
+	menu.add(this.helpMenu = new KAGMenuItem(this, "ヘルプ(&H)", 0, void, false));
+
+		helpMenu.add(this.helpIndexMenuItem = new KAGMenuItem(this, "目次(&I) ...", 0,
+			onHelpIndexMenuItemClick, false));
+		helpMenu.add(this.helpAboutMenuItem = new KAGMenuItem(this, "このソフトについて(&A) ...", 0,
+			onHelpAboutMenuItemClick, false));
+
+	menu.add(this.debugMenu = new KAGMenuItem(this, "デバッグ(&D)", 0, void, false));
+
+		debugMenu.add(this.reloadScenarioMenuItem = new KAGMenuItem(this, "シナリオの再読込み(&R)", 1,
+			onReloadScenarioMenuItemClick, false));
+		debugMenu.add(this.showConsoleMenuItem = new KAGMenuItem(this, "コンソール(&C)\tShift+F4", 1,
+			onShowConsoleMenuItemClick, false));
+		debugMenu.add(this.showControllerMenuItem = new KAGMenuItem(this, "コントローラ(&S)\tShift+F1", 1,
+			onShowContollerMenuItemClick, false));
+
+};
+@endif
+
+/*----------------------------------------------------------------------------/
+/	AnimationLayer
+/----------------------------------------------------------------------------*/
+class AnimationLayerTM extends AnimationLayer
+{
+	function AnimationLayerTM()
+	{
+		super.AnimationLayer(...);
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function loadImages(elm)
+	{
+		// loadImages オーバーライド
+		// elm は読み込み情報
+		if(elm === void)
+		{
+			freeImage();
+			return;
+		}
+
+		Anim_loadParams = %[];
+		(Dictionary.assign incontextof Anim_loadParams)(elm);
+			// パラメータを待避
+
+		// アニメーション情報をクリア
+		clearAnim();
+
+		// 画像を読み込む
+		global.KAGLayer.loadImages(elm.storage, elm.key);
+
+		// 色補正
+		applyColorCorrection(this, elm);
+
+		// フリップ
+		if(elm.flipud !== void && +elm.flipud)
+		{
+			// 上下反転
+			flipUD();
+		}
+		if(elm.fliplr !== void && +elm.fliplr)
+		{
+			// 左右反転
+			flipLR();
+		}
+
+		// クリッピング
+		if(elm.clipleft !== void)
+		{
+			// クリッピングが指定されている
+			width = +elm.clipwidth;
+			height = +elm.clipheight;
+			imageLeft = -elm.clipleft;
+			imageTop = -elm.cliptop;
+		}
+		else
+		{
+			setSizeToImageSize();
+		}
+
+		// レイヤモード
+		if(elm.mode !== void && elm.mode == "rect")
+			type = ltCoverRect;
+		else
+			type = ltTransparent;
+
+		// 可視不可視、位置、不透明度、インデックス
+		if ( elm !== void && elm.pos !== void ) {
+			// ポジションに従って位置を決定
+			left= window.scPositionX[elm.pos] - width \ 2;
+			dm("left: "+left+" ("+width+","+height+") / pos="+elm.pos+" / cl="+window.scPositionX[elm.pos]+" / visible="+visible+" / opacity="+opacity);
+			top = window.scHeight - height;
+		}
+		else
+		{
+			if(elm.left !== void) left = +elm.left;
+			if(elm.top !== void) top = +elm.top;
+		}
+		if ( elm !== void && elm.horizon !== void ) {		//ADD : 地平線からの距離あわせ
+			top	= window.scHeight - height - elm.horizon;	//ADD
+		}													//ADD
+		if(elm.visible !== void) visible = +elm.visible;
+		if(elm.opacity !== void) opacity = +elm.opacity;
+		absolute = +elm.index if elm.index !== void;
+
+		// アニメーション情報があれば、読み込む
+		Anim_storageName =
+			Storages.getPlacedPath(
+				Storages.chopStorageExt(elm.storage) + ".asd");
+		if(Anim_storageName != '')
+		{
+			// アニメーション情報があった!
+			// アニメーション情報をデフォルトのコンダクタに読み込む
+			loadAnimInfo(0, ''); // ついでにアニメーション開始(もし開始できれば)
+		}
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	MessageLayer
+/----------------------------------------------------------------------------*/
+class MessageLayerTM extends MessageLayer
+{
+	var edgeExtent = 2; // 袋文字のふとさ
+	var edgeEmphasis = 1024; // 袋文字の強調度
+
+	function MessageLayerTM()
+	{
+		super.MessageLayer(...);
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function showBreakGlyph(glyphobj, storage, key)
+	{
+		// 画面に行待ち/ページ待ち記号を表示する
+		glyphobj.parent = this; // 親を自分にする
+		glyphobj.loadImages(storage, key); // 画像を読み込む
+		glyphobj.bringToFront(); // 最前面に
+
+		if(glyphFixedPosition)
+		{
+			glyphobj.setPos(glyphFixedLeft, glyphFixedTop);
+		}
+		else
+		{
+			var px, py;
+			if(!vertical)
+			{
+				px = lineLayerPos + lineLayerOriginX + getLineLayerLeftOffset();
+				py = y + lineSize + lineSpacing - glyphobj.height;
+				// カーソルが画面外に出てしまったとき
+//				dm("first :px,py = "+px+","+py+" .."+(lineLayer.width-glyphobj.width-marginR));
+				if(px>=lineLayer.width-glyphobj.width-marginR)
+				{
+					//	次行の先頭へ
+					px	-= lineLayerPos;
+					py	+= lineSize + lineSpacing;
+				}
+			}
+			else
+			{
+				px = x - lineSpacing-  (lineSize>>1) - (glyphobj.width>>1);
+				py = lineLayerPos + lineLayerOriginY + getLineLayerTopOffset();
+				// カーソルが画面外に出てしまったとき
+				dm("first :px,py = "+px+","+py);
+				if(py>=lineLayer.height-glyphobj.height-marginB)
+				{
+					//	次行の先頭へ
+					px	-= lineSpacing + (lineSize>>1);
+					py	-= lineLayerPos;
+				}
+			}
+//			dm("result:px,py = "+px+","+py);
+			glyphobj.setPos(px, py);
+		}
+		glyphobj.visible = true;
+	}
+}
+
+var yesnolayer;
+function MYaskYesNo(win=kag, par=kag.fore.base, msg, resultfunc, arg1, arg2)
+{
+	if(!alreadyExistYesNo)
+	{
+		yesnolayer = new YesNoLayer(win, par);
+		if(!yesnolayer.show(msg, resultfunc, arg1, arg2))
+			invalidate yesnolayer;
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/
+/----------------------------------------------------------------------------*/

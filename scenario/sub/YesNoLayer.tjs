@@ -1,0 +1,220 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) 1999-2002 TYPE-MOON All Rights Reserved.
+/		イエスノーを受け付けるレイヤー
+/----------------------------------------------------------------------------*/
+@if(__YESNOLAYER_DEFINED__==0)
+@set(__YESNOLAYER_DEFINED__=1)
+
+Scripts.execStorage("ExButtonLayer.tjs");
+
+var alreadyExistYesNo = false;	//	YesNoレイヤーは一度にひとつしか存在できない
+
+class YesNoLayer extends FadeLayer
+{
+	var yesbtn;
+	var nobtn;
+
+	var base	= [];
+
+	var text;
+	var yesimage	= "汎用ok.png";
+//	var yespos		= [ 19, 88 ];
+	var yespos		= [ -107, 88 ];	//	X座標は中心からの位置
+	var noimage		= "汎用cancel.png";
+//	var nopos		= [ 135, 88 ];
+	var nopos		= [ 9, 88 ];	//	X座標は中心からの位置
+//	var windowimage	= "汎用ウィンドウ.png";
+	var baseimage	= [
+		"汎用左.png", "汎用中.png", "汎用右.png"
+	];
+	var minwidth	= 252;		//	最低限の幅
+
+	var linespacing	= 2;		//	行間
+	var spacing		= 3;		//	ボタンの間
+	var textcolor	= 0xFFFFFF;	//	文字色
+	var shadowcolor	= 0x000000;	//	縁取りの色
+	var LRmargin	= 20;		//	左右のマージン
+
+	var time		= 200;
+	var accel		= 2;
+
+	var resultfunc;				//	結果を受け取る関数
+	var result;					//	結果
+
+	var parentmodal;
+
+	var arg = [];
+	var showed = false;
+
+	var reactivateTimer;	//	表示できなかったときに再試行するためのタイマー
+
+	function YesNoLayer(win, par)
+	{
+		alreadyExistYesNo	= true;
+		super.FadeLayer(...);
+
+//		loadImages(windowimage);
+//		setSizeToImageSize();
+		name	= "Yes/No 問い合わせ";
+
+//		left= (par.width - width) >> 1;
+//		top	= (par.height - height) >> 1;
+
+		yesbtn	= new global.ExButtonLayer(win, this, "yes", 0, yespos[1], yesimage, "決定します。");
+		nobtn	= new global.ExButtonLayer(win, this, "no", 0, nopos[1], noimage, "キャンセルします。");
+
+		for(var i=0; i<baseimage.count; i++)
+		{
+			var b = base[i] = new global.Layer(win, this);
+			b.loadImages(baseimage[i]);
+			b.setSizeToImageSize();
+		}
+		yesbtn.changePushButton(true);	//	押されるだけのボタン
+		nobtn.changePushButton(true);
+	}
+
+	function finalize()
+	{
+		release(base[2]);
+		release(base[1]);
+		release(base[0]);
+		release(yesbtn);
+		release(nobtn);
+		super.finalize(...);
+		alreadyExistYesNo	= false;
+	}
+
+	function show(t="", rf=void, arg1=void, arg2=void, fontsize=16)
+	{
+		if(!window.inStable)
+		{
+			dm("system not stable.");
+			return false;
+		}
+/*	うまくいかなかった
+		{//	システムが安定でないときは、時間をおいて再度挑戦する。
+			text	= t;
+			if(font.height!=fontsize)
+				font.height	= fontsize;
+			resultfunc	= rf;
+			arg[0]	= arg1;
+			arg[1]	= arg2;
+
+			reactivateTimer	= new Timer(reactivate, "");
+			reactivateTimer.interval= 200;
+			reactivateTimer.enabled	= true;
+
+			return true;
+		}
+*/
+		if(showed)
+			return true;
+		showed	= true;
+
+		if(t=="")
+			t	= "よろしいですか？";
+
+		if(font.height!=fontsize)
+			font.height	= fontsize;
+
+		var lines	= [].split("\n", t);	//	改行記号で行毎に分割
+
+		//	必要な幅を計算
+		var maxwidth = 0;
+		for(var i=0; i<lines.count; i++)
+		{
+			var w = font.getTextWidth(lines[i]);
+			if(maxwidth < w)
+				maxwidth	= w;
+		}
+
+		//	領域を用意し、ベースを書き込む
+		var bs = base;
+		var w = maxwidth + LRmargin * 2;
+		w	= minwidth if maxwidth<minwidth;	//	最低限必要な幅に達しているか？
+		setSize(w, bs[0].height);
+		copyRect(0, 0, bs[0], 0, 0, bs[0].width, bs[0].height);
+		copyRect(w-bs[2].width, 0, bs[2], 0, 0, bs[2].width, bs[2].height);
+		stretchCopy(bs[0].width, 0, w-bs[0].width-bs[2].width, height,
+					bs[1], 0, 0, bs[1].width, bs[1].height, stNearest);
+
+		//	表示位置を調節
+		var par = parent;
+		setPos((par.width - w) >> 1, (par.height - height) >> 1);
+
+		//	ボタンの位置を調整
+		var whalf = w >> 1;
+		yesbtn.left	= whalf + yespos[0];
+		nobtn.left	= whalf + nopos[0];
+
+		//	表示開始位置を決定
+		var l = (w - maxwidth) >> 1;
+		if(l<0)	l	= 0;
+		var textheight = font.getTextHeight(lines[0]);
+		var t = (yesbtn.top - lines.count * textheight - (lines.count - 1) * linespacing) >> 1;
+
+		//	テキストを描画
+		for(var i=0; i<lines.count; i++)
+		{
+			drawText(l, t, lines[i], textcolor, 255, true, 1024, shadowcolor, 2);
+			t	+= textheight + linespacing;
+		}
+
+		result	= false;
+		fade(255, time, accel);
+		setMode();
+		resultfunc	= rf;
+		arg[0] = arg1;
+		arg[1] = arg2;
+
+		return true;
+	}
+
+	function hide()
+	{
+		if(!showed)
+			return true;
+		showed	= false;
+
+		removeMode();
+		fade(0, time, -accel);
+		suicide(time+200);
+
+		return true;
+	}
+
+	function reactivate()
+	{
+		invalidate reactivateTimer if reactivateTimer!=void;
+		show(text, resultfunc, arg[0], arg[1], font.height);
+	}
+
+	function onButtonDown(btn)
+	{
+		switch(btn)
+		{
+		case yesbtn:
+			result	= true;
+		case nobtn:
+			hide();
+			resultfunc(result, arg[0], arg[1]) if resultfunc!=void;	//	結果を知らせる
+			break;
+		}
+	}
+
+	function onMouseDown(x, y, button, shift)
+	{
+		if(button == mbRight)
+			onButtonDown(nobtn);	//	右クリックはキャンセル
+	}
+
+	function onKeyDown(button, shift)
+	{
+		super.onKeyDown(button, shift, true);
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/
+/----------------------------------------------------------------------------*/
+@endif

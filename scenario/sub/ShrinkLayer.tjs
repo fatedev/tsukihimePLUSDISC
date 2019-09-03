@@ -1,0 +1,186 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		潰れたりするレイヤー
+/----------------------------------------------------------------------------*/
+@if(__SHRINKLAYER_DEFINED__==0)
+@set(__SHRINKLAYER_DEFINED__=1)
+
+Scripts.execStorage("FadeLayer.tjs");
+
+//	垂直方向に潰れたり元に戻るレイヤー
+class VerticalShrinkLayer extends FadeLayer
+{
+	var _orifice;		//	開口率
+	var center;			//	表示中心(Y軸)
+
+	var changeorifice;	//	開口率の変化量
+	var lastorifice;	//	変化開始時の開口率
+	var time_orifice = 300;	//	変化時間
+	var accel_orifice = -2;	//	変化の加速度
+	var co_time;		//	変化開始時刻
+
+	var onchangeorifice;//	変化中か？
+
+	var finishfunc;
+
+	function VerticalShrinkLayer(win, par, w=1, mh=1, c=0, sth=0)
+	{
+		super.FadeLayer(...);
+		init(w, mh, c, sth);
+		opacity	= 255;
+	}
+
+	function finalize()
+	{
+		stopChangeOrifice();
+		super.finalize(...);
+	}
+
+	function init(w, mh, c, sth)
+	{
+		setImageSize(w, mh);
+		setSize(w, _orifice = sth);
+		center	= c;
+		top	= center - mh \ 2;
+	}
+
+	function loadImages()
+	{
+		var ret = super.loadImages(...);
+		updateSize();
+		return ret;
+	}
+
+	function updateSize()
+	{
+		width		= imageWidth;
+	}
+
+	//	指定の開口率へ(o=voidなら最大にする)
+	function changeOrifice(o=void, time=void, accel=void, func=void)
+	{
+		if(o===void)
+			o = imageHeight;
+
+		if(orifice != o)
+		{
+			stopChangeOrifice();
+
+			changeorifice	= o - orifice;
+			lastorifice		= orifice;
+			time_orifice	= time if time!==void;
+			accel_orifice	= accel if accel!==void;
+			finishfunc		= func;
+			co_time	= System.getTickCount();	//	変化開始時刻
+			System.addContinuousHandler(orificehandler);
+			onchangeorifice = true;
+		}
+	}
+
+	function orificehandler(tick)
+	{
+		var past = tick - co_time;
+		if(past>=time_orifice)
+			finishChangeOrifice();
+		else
+		{
+			var per = calcAccel(past / time_orifice, accel_orifice);
+			orifice = lastorifice + changeorifice * per;
+		}
+	}
+
+	function finishChangeOrifice()
+	{
+		stopChangeOrifice();
+		orifice = lastorifice + changeorifice;
+	}
+
+	function stopChangeOrifice()
+	{
+		if(onchangeorifice)
+		{
+			System.removeContinuousHandler(orificehandler);
+			onchangeorifice = false;
+			if(finishfunc!==void)
+				finishfunc();
+		}
+	}
+
+	property orifice
+	{
+		setter(o)
+		{
+			var flag = int(o) != orifice;
+			_orifice = o;
+			if(flag)
+			{
+				//	位置とサイズの微調整
+				height = o;
+				var oh = o >> 1;
+				top	= center - oh;
+				imageTop = oh - (imageHeight >> 1);
+				update();
+			}
+		}
+		getter { return int(_orifice); }
+	}
+}
+
+//	水平方向に伸び縮みするレイヤー
+class HorizontalShrinkLayer extends VerticalShrinkLayer
+{
+	function HorizontalShrinkLayer(win, par, h=1, mw=1, c=0, stw=0)
+	{
+		super.VerticalShrinkLayer(...);
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function init(h, mw, c, stw)
+	{
+		setImageSize(mw, h);
+		setSize(_orifice = stw, h);
+		center	= c;
+		left	= center - mw \ 2;
+	}
+
+	function updateSize()
+	{
+		height	= imageHeight;
+	}
+
+	function changeOrifice(o=void, time=void, accel=void, func=void)
+	{
+		if(o===void)
+			o = imageWidth;
+
+		super.changeOrifice(o, time, accel, func);
+	}
+
+	property orifice
+	{
+		setter(o)
+		{
+			var flag = int(o) != orifice;
+			_orifice = o;
+			if(flag)
+			{
+				//	位置とサイズの微調整
+				width	= o;
+				var oh = o >> 1;
+				left	= center - oh;
+				imageLeft = oh - (imageWidth >> 1);
+				update();
+			}
+		}
+		getter { return int(_orifice); }
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	End of File
+/----------------------------------------------------------------------------*/
+@endif

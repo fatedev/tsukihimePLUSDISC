@@ -1,0 +1,240 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		テキストがスクロールするレイヤー
+/----------------------------------------------------------------------------*/
+@if(__TEXTSCROLLLAYER_DEFINED__==0)
+@set(__TEXTSCROLLLAYER_DEFINED__=1)
+
+class TextScrollLayer extends Layer
+{
+	var lines;	//	表示する文字列
+	var tops;	//	行毎の文字開始位置
+
+	var _position;	//	位置
+	var startpos;
+	var starttime;	//	スクロール開始時間
+	var onscroll;	//	スクロールしているか
+	var scrollspeed;//	スクロール速度(pixel毎秒)
+	var scrolltime;	//	スクロールしている時間
+	var checkdelaytime;	//	描画されていないときに終了するというチェックを、スクロール開始から度の程度遅らすか
+	var lasttick;
+	var accel;
+
+	var drawrects;	//	前回描画位置
+	var bg;			//	背景色/背景画像
+	var textcolor	= 0xFFFFFF;	//	文字色
+	var shadowcolor	= 0x000000;//	影色
+	var shadowwidth	= 1;
+	var textopac	= 255;	//	文字の不透明度
+	var shadowlevel	= 512;
+
+	var lineSpacing	= 2;//	行間
+
+	var ml=2, mt=2, mr=2, mb=2;	//	マージン
+	var _ml, _mt, _mr, _mb;		//	マージン(直前)
+
+	function TextScrollLayer(win, par, bg_f=0xFF000000, fh=void, textfile=void)
+	{
+		super.Layer(...);
+
+		font.height	= fh if fh!==void;
+		loadText(textfile) if textfile!=void;
+		scrollspeed	= -20;
+
+		if(typeof bg_f == "Integer")
+			bg	= bg_f;
+		else if(typeof bg_f == "String")
+		{
+			bg	= new Layer(win, this);
+			bg.loadImages(bg_f);
+
+			setImageSize(bg.imageWidth, bg.imageHeight);
+			setSizeToImageSize();
+		}
+	}
+
+	function finalize()
+	{
+		stopScroll();
+		invalidate bg if typeof bg=="Object";
+		invalidate lines if lines!=void;
+		invalidate tops if tops!=void;
+
+		super.finalize(...);
+	}
+
+	function loadText(textfile)
+	{
+		invalidate lines if lines!=void;
+		invalidate tops if tops!=void;
+
+		lines	= [].load(textfile);
+		tops	= [];
+		for(var i=0; i<lines.count; i++)
+		{
+			var line = lines[i];
+			if(line[0]==";")
+			{
+				lines.erase(i);
+				i--;
+			}
+			else
+			{
+				var j;
+				for(j=0; line[j]==" "||line[j]=="　"; j++);
+				tops[i]	= j;
+			}
+		}
+	}
+
+	function startScroll(speed=void, pos=height, time=void, delay=1000)
+	{
+		position		= startpos	= pos;
+		scrollspeed		= speed if speed!=void;
+		scrolltime		= time;
+		checkdelaytime	= delay;
+		accel			= 1.0;
+		lasttick	= starttime		= System.getTickCount();
+		System.addContinuousHandler(scrollhandler);
+		onscroll	= true;
+	}
+
+	function scrollhandler(tick)
+	{
+		var past = tick - starttime;
+		var interval = tick - lasttick;
+//		position	+= scrollspeed * accel * interval / 1000;
+		position	= int(startpos + scrollspeed * past / 1000 + 0.5);
+//		dm(@"position = ${position}");
+		if(scrolltime!=void)
+		{
+			if(past>scrolltime)
+				stopScroll();
+		}
+		else
+		{
+			if(past>checkdelaytime)
+			{
+				if(drawrects!=void && drawrects.count<1)
+					stopScroll();
+			}
+		}
+		lasttick	= tick;
+	}
+
+	function finishScroll()
+	{
+		stopScroll();
+	}
+
+	function stopScroll()
+	{
+		if(onscroll)
+		{
+			System.removeContinuousHandler(scrollhandler);
+			onscroll	= false;
+			if(drawrects!=void && drawrects.count<1)
+			{
+				invalidate drawrects;
+				drawrects	= void;
+			}
+			if(typeof window.onScrollEnd != "undefined")
+				window.onScrollEnd(this);
+		}
+	}
+
+	function draw()
+	{
+		//	背景をクリア
+		var dr = drawrects;
+		if(typeof bg == "Object")
+		{
+			if(dr!=void)
+			{
+				for(var i=0; i<dr.count; i++)
+				{
+					var r = dr[i];
+					copyRect(r.left, r.top, bg, r.left, r.top, r.width, r.height);
+				}
+				invalidate drawrects;
+			}
+			else
+				copyRect(0, 0, bg, 0, 0, width, height);
+		}
+		else
+		{
+			if(dr!=void)
+			{
+				for(var i=0; i<dr.count; i++)
+				{
+					var r = dr[i];
+					fillRect(r.left, r.top, r.width, r.height, bg);
+				}
+				invalidate drawrects;
+			}
+			else
+				fillRect(0, 0, width, height, bg);
+		}
+		drawrects	= [];
+
+		//	クリップ領域の調整
+		if(ml!=_ml||mt!=_mt||mr!=_mr||mb!=_mb)
+			setClip(_ml=ml, _mt=mt, width-((_mr=mr)+ml), height-((_mb=mb)+mt));
+
+		//	文字列の描画
+		var ul = -font.height;
+		var ll = height;
+		var h = position;
+		var ls = lineSpacing;
+		var tc=textcolor, to=textopac, sc=shadowcolor, sw=shadowwidth, sl=shadowlevel;
+		for(var i=0; i<lines.count; i++)
+		{
+			var line = lines[i];
+			var th;
+			if(h>ul && h<ll)
+			{
+				var str, textleft;
+				drawText(textleft = font.getTextWidth(line.substr(0, tops[i]))+ml, h,
+						 str = line.substr(tops[i]), tc, to,, sl, sc, sw);
+				th	= font.getTextHeight(str);
+				drawrects.add(%[left:textleft-sw, top:h-sw,
+					width:font.getTextWidth(str)+(sw<<1), height:th+(sw<<1)]);
+//				dm(@"(${textleft}, ${h}, ${str}");
+			}
+			else
+				th	= font.getTextHeight(line);
+			h += th + ls;
+		}
+	}
+
+	function onMouseDown(x, y, button, shift)
+	{
+		if(button==mbLeft)
+			accel	= 2.0;
+	}
+
+	function onMouseUp(x, y, button, shift)
+	{
+		if(button==mbLeft)
+			accel	= 1.0;
+	}
+
+	property position
+	{
+		setter(p)
+		{
+			if(p!=position)
+			{
+				_position	= p;
+//				dm(@"position = ${position}");
+				draw();
+			}
+		}
+		getter	{ return _position; }
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	
+/----------------------------------------------------------------------------*/
+@endif

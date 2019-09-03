@@ -1,0 +1,300 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/	フェードするレイヤー
+/----------------------------------------------------------------------------*/
+@if(__FADELAYER_DEFINED__==0)
+@set(__FADELAYER_DEFINED__=1)
+
+Scripts.execStorage("subroutine.tjs");
+
+var modestack = [];	//	モーダル状態に移行したレイヤーを記録するスタック
+
+class FadeLayer extends KAGLayer
+{
+	var nextfunc;		//	フェード後に実行されるメソッド
+
+	var delayTimer;
+
+	var focusitem;		//	時間差でフォーカスを向けるレイヤー
+
+	//	外部から、このオブジェクトが解放されたときに実行される処理を登録する
+	var finalizer = [];
+
+	function FadeLayer(win, par)
+	{
+		super.KAGLayer(...);
+		opacity	= 0;
+	}
+
+	function finalize()
+	{
+		dm("end of "+name);
+		//	外部で定義された終了処理関数を実行する
+		for(var i=0; i<finalizer.count; i++)
+			finalizer[i][0](finalizer[i][1], finalizer[i][2]);
+		release(delayTimer);
+		super.finalize(...);
+	}
+
+	//	このオブジェクトが解放されるときに実行される処理の追加
+	function addFinalizer(func, arg1, arg2)
+	{
+		finalizer.add([func, arg1, arg2]);
+	}
+
+	//	フェードによる表示/消去
+	function show(time, accel, func=void)
+	{
+		fade(255, time, accel, func);
+	}
+
+	function hide(time, accel, func=void)
+	{
+		fade(0, time, accel, func);
+	}
+
+	//	移動
+	function move(l, t, opacity=void, time, accel)
+	{
+		moveObject.stopMove() if moveObject!=void;
+		visible	= true;
+		if(time>0)
+		{
+			var array = [];
+			array[0]	= left;
+			array[1]	= top;
+			array[2]	= this.opacity;
+			array[3]	= l;
+			array[4]	= t;
+			array[5]	= opacity!==void ? opacity : this.opacity;
+			moveObject = new LinearMover(this, array, time,
+				accel === void ? 0 : +accel, fadeFinish);
+			moveObject.startMove();
+//			dm("move: "+left+","+top+" -> "+l+","+t);
+		}
+		else
+		{
+			this.opacity	= opacity if opacity !== void;
+			fadeFinish();
+		}
+	}
+
+	//	ゲームメニューレイヤーのフェード(不透明度のみ)
+	function fade(opacity, time, accel, func=void)
+	{
+		dm("fade start: "+name+", "+time);
+		moveObject.stopMove() if moveObject!=void;
+		visible	= true;
+		if(func!=void)
+			nextfunc	= func;
+		if(time>0)
+		{
+			var array = [];
+			array[0]	= array[3]	= left;
+			array[1]	= array[4]	= top;
+			array[2]	= this.opacity;
+			array[5]	= opacity;
+			moveObject = new LinearMover(this, array, time,
+				accel === void ? 0 : +accel, fadeFinish);
+			moveObject.startMove();
+		}
+		else
+		{
+			this.opacity	= opacity;
+			fadeFinish();
+		}
+	}
+	function fadeFinish()
+	{
+		dm("fade finished: "+name);
+		if(opacity<1)
+			visible	= false;
+		moveObject	= void;
+		if(nextfunc!==void)
+		{
+			var func = nextfunc;
+			nextfunc	= void;
+			func(this);
+		}
+	}
+
+	function setMode()
+	{
+		dm("=-=- set Mode: "+name);
+		if(modestack.count>0)
+			modestack[modestack.count-1].removeMode_();
+		modestack.add(this);	//	これからモーダル状態にする(現在の)レイヤーを登録
+
+		setMode_(...);
+	}
+	function setMode_()
+	{
+		super.setMode(...);
+	}
+
+	function removeMode()
+	{
+		dm("=-=- remove Mode: "+name);
+		if(modestack[modestack.count-1]!=this)
+		{
+			new Exception("今モーダル状態を解除しようとしたレイヤーは、最上位のモーダルレイヤーではありません。");
+			return;
+		}
+
+		removeMode_(...);
+
+		modestack.erase(modestack.count-1);	//	今モーダル状態を解除したこのレイヤーを削除
+		if(modestack.count>0)
+			modestack[modestack.count-1].setMode_();
+	}
+	function removeMode_()
+	{
+		super.removeMode(...);
+	}
+
+	//	自分自身を処分する
+	function suicide(time)
+	{
+		release(delayTimer);
+		delayTimer	= new Timer(
+			function {
+				invalidate this;
+			} incontextof this,
+			""
+		);
+		delayTimer.interval	= time;
+		delayTimer.enabled	= true;
+	}
+
+	//	指定のオブジェクトにフォーカスを向ける、時間差で。
+	function delayFocus(time, it)
+	{
+		focusitem = it;
+		delayTimer	= new Timer(
+			function {
+				release(delayTimer);
+				focusitem.focus();
+			} incontextof this,
+			""
+		);
+		delayTimer.interval	= time;
+		delayTimer.enabled	= true;
+	}
+/*
+	//	BGM切り替え
+	function changeBGM(file=bgmfile, time=bgmfadetime, overlap=bgmoverlap)
+	{
+		if(file=="")
+			return;
+
+		var bgm = window.bgm;
+		var lf = bgm.playingStorage;
+		if(lf!=file)
+		{
+			lastPlaying.add(lf);
+			lastLooping.add(bgm.looping);
+
+			bgm.exchange(%["storage" => file, "loop" => true, "time" => time, "overlap" => overlap]);
+			dm("BGM: "+lf+" -> "+file);
+			isChangedBGM	= true;
+		}
+	}
+
+	function restoreBGM(time=bgmfadetime, overlap=bgmoverlap)
+	{
+		if(isChangedBGM)
+		{
+			if(lastPlaying.count>0)
+			{
+				var no = lastPlaying.count-1;
+				var lf = lastPlaying[no];
+				var lp = lastLooping[no];
+				window.bgm.exchange(%["storage" => lf, "loop" => lp, "time" => time, "overlap" => overlap]);
+				dm("BGM: "+window.bgm.playingStorage+" -> "+lf);
+
+				lastPlaying.erase(no);
+				lastLooping.erase(no);
+			}
+			else
+			{
+				var bgm = window.bgm;
+				bgm.stopFade();
+				bgm.fadeOut(%["time" => time]);
+				dm("BGM: "+bgm.playingStorage+" -> stop");
+				bgm.playingStorage	= "";//	playingStorageを再生中かのキーに使っている
+										//	ので、フェードが終わるよりも先に無効にして
+										//	いる
+			}
+			isChangedBGM	= false;
+		}
+	}
+*/
+
+	var lastse;
+
+	function playSE(file, no=-1, loop=false)
+	{
+		if(file=="")
+			return;
+/*
+		var win = window;
+		if(no<0)
+		{
+			no	= win.numSEBuffers-1;	//	どこも空いてなかったら一番最後を使う
+			for(var i=no; i>=0; i--)
+			{
+				if(win.se[i].status!="play")
+				{
+					no = i;
+					break;
+				}
+//				dm("se["+i+"] = "+win.se[i].status);
+			}
+		}
+		else
+		{
+			no	= 0 if no<0;
+			no	= win.numSEBuffers-1 if no>=win.numSEBuffers;
+		}
+//		dm("play "+file+" to No."+no);
+		win.se[no].play(%["storage" => file, "loop" => loop]);*/
+		playSoundBuffer(file, loop);
+		lastse	= file;
+	}
+
+	function stopSE(no_name=-1)
+	{
+		if(typeof no_name == "String")
+		{
+			lastse	= no_name;
+			no_name	= -1;
+		}
+/*
+		var win = window;
+		if(no_name<0)
+		{
+			for(var i=win.numSEBuffers-1; i>=0; i--)
+			{
+				if(win.se[i].currentStorage==lastse)
+				{
+					lastse	= "";
+					win.se[i].stop();
+					return;
+				}
+			}
+		}
+		else
+		{
+			no	= 0 if no<0;
+			no	= win.numSEBuffers-1 if no>=win.numSEBuffers;
+			win.se[no].stop();
+		}
+*/
+		stopSoundBuffer(lastse);
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/
+/----------------------------------------------------------------------------*/
+@endif

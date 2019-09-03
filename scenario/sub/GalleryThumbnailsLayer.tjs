@@ -1,0 +1,461 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		サムネールを表示するレイヤー
+/----------------------------------------------------------------------------*/
+@if(__GALLERYTHUMBNAILSLAYER_DEFINED__==0)
+@set(__GALLERYTHUMBNAILSLAYER_DEFINED__=1)
+
+Scripts.execStorage("ShrinkLayer.tjs");
+
+var ThumbnailWidth			= 120;
+var ThumbnailHeight			= 90;
+var ThumbnailLWCount		= 2;	//	2枚並べる
+var ThumbnailTWCount		= 4;	//	メインは横に4枚
+var ThumbnailSpacing		= 12;	//	隙間(偶数であること！)
+var ThumbnailShadowSize		= 5;	//	影の大きさ
+var ThumbnailShadowColor	= 0x60404040;	//	影の色
+var ThumbnailDispHeight		= ThumbnailHeight * ThumbnailLWCount + ThumbnailSpacing * (ThumbnailLWCount-1) + ThumbnailShadowSize * 2;
+var ThumbnailDefaultPosition= -50;
+var ThumbnailPageMoving		= (ThumbnailWidth + ThumbnailSpacing) * ThumbnailTWCount;
+
+var ThumbnailMaxSpeed		= 800 / 1000;	//	最大速度 400pixel毎秒
+var ThumbnailMinSpeed		= 20 / 1000;		//	最小速度 1pixel毎秒(これ以下は停止として扱う)
+var ThumbnailPageChangeRate	= 0.9;	//	ページ切り替えを画面幅の何パーセントで行うか？
+var ThumbnailRotateAccel	= 0.97;	//	加速度(主に反対方向の。つまり減速度)
+var ThumbnailRotateMinUnit	= 10;	//	加速度計算の最小単位(ms)(この時間ごとに減速を行う)
+var ThumbnailBGColor		= 0x00000000;	//	ていうか、透明
+
+class GalleryThumbnailsLayer extends VerticalShrinkLayer
+{
+	var thumbnails;
+	var filenames;
+
+	//	現在表示位置
+	var _position	= 0;
+
+	//	自動移動
+	var onmove;
+	var movequantum;
+	var startposition, movestarttick;
+	var time_move	= 300;
+	var time_accel	= -2;
+
+	//	選択状態
+	var _curitem = -1;
+
+	//	カーサ
+	var cursorLayer;
+	var cursorimage	= "gl_cursor";
+
+	//	マスク
+	var maskLayer;
+	var maskimage	= "gl_thumbmask";
+
+	var enter_se	= "plus_se01.wav";
+	var pagechg_se	= "plus_se04.wav";
+
+	function GalleryThumbnailsLayer(win, par)
+	{
+		super.VerticalShrinkLayer(win, par, win.scWidth, ThumbnailDispHeight, win.scHeight\2);
+		name	= "サムネール一覧表示";
+
+		//	カーソル画像
+		cursorLayer	= new global.Layer(win, this);
+		cursorLayer.loadImages(cursorimage);
+		cursorLayer.setSizeToImageSize();
+
+		//	マスク画像
+		maskLayer	= new global.Layer(win, this);
+		maskLayer.loadImages(maskimage);
+		maskLayer.setSizeToImageSize();
+
+		thumbnails	= [];
+		focusable	= true;
+		dm("make thumbnails.");
+	}
+
+	function finalize()
+	{
+		stopMove();
+		unloadThumbnails();
+		release(maskLayer);
+		release(cursorLayer);
+		super.finalize(...);
+	}
+
+	function loadThumbnails(filenames)
+	{
+		unloadThumbnails();
+		thumbnails = [];
+
+		var win = window;
+		var par = this;
+		var pi = ThumbnailPendingImage;
+		var suffix = ThumbnailSuffix;
+		for(var i=0; i<filenames.count; i++)
+		{
+			dm("load: "+filenames[i]);
+			var thumb = new global.Layer(win, par);
+			thumb.loadImages(filenames[i]+suffix);
+			thumb.setSizeToImageSize();
+			thumbnails.add(thumb);
+		}
+/*		var odd = filenames.count \ (ThumbnailTWCount * ThumbnailLWCount);
+		for(var i=0; i<odd; i++)
+			thumbnails.add(void);
+*/
+		position	= ThumbnailDefaultPosition;
+		_curitem	= -1;
+	}
+
+	function unloadThumbnails()
+	{
+		if(thumbnails!=void)
+		{
+			for(var i=0; i<thumbnails.count; i++)
+				release(thumbnails[i]);
+			invalidate thumbnails;
+		}
+	}
+
+	function move(mv, time=void, accel=void)
+	{
+		finishMove();
+
+		if(mv == "left")
+			mv	= ThumbnailPageMoving;
+		else if(mv == "right")
+			mv	= -ThumbnailPageMoving;
+
+		dm("start position: "+position);
+		movequantum	= mv;
+		startposition= position;
+		time_move	= time if time!==void;
+		time_accel	= accel if accel!==void;
+		movestarttick= System.getTickCount();
+		System.addContinuousHandler(movehandler);
+		playSoundBuffer(pagechg_se);
+		onmove	= true;
+	}
+
+	function movehandler(tick)
+	{
+		var past = tick - movestarttick;
+		if(past > time_move)
+			finishMove();
+		else
+		{
+			var per = calcAccel(past/time_move, time_accel);
+			position	= startposition + movequantum * per;
+		}
+	}
+
+	function finishMove()
+	{
+		dm("finish move.");
+		position	= startposition + movequantum if onmove;
+		stopMove();
+	}
+
+	function stopMove()
+	{
+		if(onmove)
+		{
+			System.removeContinuousHandler(movehandler);
+			onmove	= false;
+		}
+	}
+
+	function checkPosition(x, y)
+	{
+		var spc = ThumbnailSpacing;
+		var tw = ThumbnailWidth;
+		var twa = tw + spc;
+		var pos = position;
+		var col, row, tmp;
+		if(x > (tmp = beltlength - pos))
+			x	-= tmp + spc;
+		else
+			x += pos - spc;
+		col = x \ twa;
+		if(x<0 || x - col * twa > tw)
+			return -1;	//	隙間部分をクリックしている
+
+		var th = ThumbnailHeight;
+		var tha = th + spc;
+		y += -imageTop - spc;
+		row = y \ tha;
+		if(y<0 || y - row * tha > th)
+			return -1;	//	隙間部分をクリックしている
+
+		var sel = col * ThumbnailLWCount + row;
+		if(thumbnails[sel] == void)
+			return -1;	//	隙間部分をクリックしている
+
+		return sel;
+	}
+
+	function adjustPosition()
+	{
+		//	画面内に入るように移動する
+		var col = curitem \ ThumbnailLWCount;
+		var tw = ThumbnailWidth;
+		var l = col * tw + (col + 1) * ThumbnailSpacing - position;
+		var mv = 0;
+		if(l < 0)
+			mv = l - tw;
+		else if(l+tw > width)
+			mv = l + tw + tw - width;
+		if(mv>width)
+			mv	-= beltlength;
+		else if(mv<-width)
+			mv	+= beltlength;
+		move(mv);
+	}
+
+	function onPaint()
+	{
+		super.onPaint(...);
+
+		var tw = ThumbnailWidth;
+		var th = ThumbnailHeight;
+		var bg = ThumbnailBGColor;
+		var ts = thumbnails;
+		var lwc = ThumbnailLWCount;
+		var pos = position;
+		var spc = ThumbnailSpacing;
+		var spc2 = spc >> 1;
+		var shadow	= ThumbnailShadowSize;
+		var shadowcolor		= ThumbnailShadowColor;
+		var shadow_w	= shadow << 1;
+		var bl = beltlength;
+		var pc = 0;
+		var w = width;
+		var sel = curitem;
+		var cnt = (ts.count \ lwc) * lwc + (ts.count % lwc > 0 ? 1 : 0) * lwc;
+		var mask = maskLayer;
+
+		for(var i=0; i<cnt; i+=lwc)
+		{
+			//	表示位置計算
+			var l = pc * tw + (pc + 1) * spc - pos;
+			if(l+tw <= 0)
+				//	左の画面外にあるときは右から出てくる可能性を計算
+				l += bl;
+			else if(l >= w)
+				//	右の画面外にあるときは左から出てくる可能性を計算
+				l -= bl;
+
+			//	(処置後)画面内にある
+			if(l+tw > 0 && l < w)
+			{
+				//	描画する
+				for(var j=0; j<lwc; j++)
+				{
+					var t = j * (th + spc) + shadow;
+					if(ts[i+j] == void)
+					{
+						//	透明にする
+						fillRect(l-shadow, t-shadow, tw+spc, th+shadow_w, bg);
+					}
+					else
+					{
+						//	マスクを書き込む
+						face	= dfBoth;
+						copyRect(l, t, mask, l, t, tw+shadow, th+shadow);
+
+						//	画像と影を書き込む
+						face	= dfMain;
+						copyRect(l, t, ts[i+j], 0, 0, tw, th);
+						fillRect(l+shadow, t+th, tw, shadow, shadowcolor);
+						fillRect(l+tw, t+shadow, shadow, th, shadowcolor);
+
+						//	不要部分を消去
+						face	= dfBoth;
+						fillRect(l, t+th, shadow, shadow, bg);
+						fillRect(l+tw, t, shadow, shadow, bg);
+						fillRect(l-shadow, t-shadow, shadow, th+shadow+spc, bg);
+						fillRect(l, t-shadow, tw+shadow, shadow, bg);
+						fillRect(l+tw+shadow, t-shadow, spc-shadow-3, th+shadow_w, bg);
+					}
+
+					//	カーソル描画
+					if(sel == i+j)
+					{
+						var csz= 3;
+						var cl = cursorLayer;
+						pileRect(l-csz, t-csz, cl, 0, 0, cl.width, cl.height);
+					}
+				}
+			}
+			pc++;
+		}
+	}
+
+	function onMouseDown(x, y, button, shift)
+	{
+		if(button==mbLeft)
+		{
+			var it = checkPosition(x, y);
+			if(it>=0)
+				curitem = it;	//	仮選択状態のアイテム(マウスを上げたときに同じか？)
+		}
+		else if(button==mbRight)
+			parent.onMouseDown(...);
+	}
+
+	function onMouseMove(x, y)
+	{
+		var sel = checkPosition(x, y);
+		if(sel>=0)
+			curitem	= sel;
+	}
+
+	function onMouseUp(x, y, button, shift)
+	{
+		if(button==mbLeft)
+		{
+			//	選択中の画像を表示する
+			if(curitem>=0)
+				parent.displayImage(curitem);
+		}
+	}
+
+	function onMouseLeave()
+	{
+		parent.onDigress();
+	}
+
+	function onKeyDown(key, shift)
+	{
+		var proceed	= true;
+		switch(key)
+		{
+		//	表示
+/*		//	ページ単位で動作しない(現状)ので、キーは受け付けない
+		case VK_RETURN:
+		case VK_SPACE:
+			if(curitem>=0)
+				parent.displayImage(curitem);
+			proceed	= false;
+			break;
+		//	カーソル移動
+		case VK_LEFT:
+			var lwcnt = ThumbnailLWCount;
+			if(curitem>=lwcnt)
+				curitem	-= lwcnt;
+			else
+			{
+				var tcnt = thumbnails.count;
+				var no = curitem + tcnt - tcnt % lwcnt;
+				while(no>=tcnt)
+					no	-= lwcnt;
+				curitem	= no;
+			}
+			adjustPosition();
+			proceed	= false;
+			break;
+		case VK_RIGHT:
+			var lwcnt = ThumbnailLWCount;
+			var tcnt = thumbnails.count;
+			if(curitem<tcnt-lwcnt)
+				curitem	+= lwcnt;
+			else
+			{
+				var no = curitem - tcnt + tcnt % lwcnt;
+				while(no<0)
+					no	+= lwcnt;
+				curitem	= no;
+			}
+			adjustPosition();
+			proceed	= false;
+			break;
+		case VK_UP:
+			var tcnt = thumbnails.count;
+			if(curitem > 0)
+				curitem--;
+			else
+				curitem	+= tcnt - 1;
+			adjustPosition();
+			proceed	= false;
+			break;
+		case VK_DOWN:
+			var tcnt = thumbnails.count;
+			if(curitem < tcnt - 1)
+				curitem++;
+			else
+				curitem	-= tcnt - 1;
+			adjustPosition();
+			proceed	= false;
+			break;
+*/
+		//	閉じる
+		case VK_ESCAPE:
+		case VK_HOME:
+			parent.hide();	//	閉じる
+			proceed	= false;
+			break;
+		}
+		super.onKeyDown(key, shift, proceed);
+	}
+
+	property position
+	{
+		setter(p)
+		{
+			p = int(p);
+			var flag = p != position;
+			var bl = beltlength;
+			while(p<0)	p += bl;
+			while(p>bl)	p -= bl;
+			_position = p;
+			dm("position: "+p);
+			if(flag)
+				update();
+		}
+		getter { return int(_position); }
+	}
+
+	property beltlength
+	{
+		getter {
+			var sidecnt = thumbnails.count \ ThumbnailLWCount +
+				(thumbnails.count % ThumbnailLWCount > 0 ? 1 : 0);
+			return sidecnt * (ThumbnailWidth + ThumbnailSpacing);
+		}
+	}
+
+	property curitem
+	{
+		setter(c)
+		{
+			if(c != curitem)
+			{
+				_curitem	= c;
+				playSoundBuffer(enter_se);
+				update();
+
+				//	違う画像を指したことを親へ伝える
+				var spc = ThumbnailSpacing;
+				var lwc = ThumbnailLWCount;
+				var c_ = c\ThumbnailLWCount;
+				var l = c_*ThumbnailWidth+(c_+1)*spc-position;
+				if(l+ThumbnailWidth<=0)
+					l += beltlength;
+				else if(l >= width)
+					l -= beltlength;
+				var t = (c%lwc)*(ThumbnailHeight+spc)+ThumbnailShadowSize;
+				parent.onIndicate(c, l, t);
+			}
+			else
+				parent.onReIndicate();
+		}
+		getter	{ return _curitem; }
+	}
+
+}
+
+/*-----------------------------------------------------------------------------
+/	End of File
+/----------------------------------------------------------------------------*/
+@endif

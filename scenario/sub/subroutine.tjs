@@ -1,0 +1,543 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) 1999-2002 TYPE-MOON All Rights Reserved.
+/		サブルーチン
+/----------------------------------------------------------------------------*/
+@if(__SUBROUTINE_DEFINED__==0)
+@set(__SUBROUTINE_DEFINED__=1)
+
+//	重力加速度(Pixel/ms^2)
+var AccelerationOfGravity = 9806.65 / 1000 / 1000 * 3;
+var AoG	= AccelerationOfGravity;
+
+//	空気密度
+var AirDensity	= 1.226;	//	1気圧,15℃:kg/m^3
+
+//	角度 -> ラジアン
+var Angle2Radian	= Math.PI / 180;
+var A2R	= Angle2Radian;
+
+//	レイヤーの前後位置
+var MostUpperForeAbsolute	= 100000;	//	一番手前の前景位置
+var MUFA	= MostUpperForeAbsolute;
+
+/*-----------------------------------------------------------------------------
+/	加速度をもった進行度の変化
+/	in	: per	進行度(0.0〜1.0)
+/		: accel	加速度(〜(-2:2)〜)
+/	out	: 加減速させた進行度
+/----------------------------------------------------------------------------*/
+function calcAccel(per, accel)
+{
+	if(accel < 0)
+	{
+		// 上弦 ( 最初が動きが早く、徐々に遅くなる )
+		per = 1.0 - per;
+		per = Math.pow(per, -accel);
+		per = 1.0 - per;
+	}
+	else if(accel > 0)
+	{
+		// 下弦 ( 最初は動きが遅く、徐々に早くなる )
+		per = Math.pow(per, accel);
+	}
+
+	return per;	//	加減速が行われた後の進行度
+}
+
+/*-----------------------------------------------------------------------------
+/	文字列比較
+/	in	: a, b	比較する文字列
+/	out	: [a>b] > 0 / [a==b] == 0 / [a<b] < 0
+/----------------------------------------------------------------------------*/
+function strcmp(a, b)
+{
+	if(a==b)
+		return 0;
+
+	var i=0;
+	while(1)
+	{
+		if(i>=b.length)	return -1;	//	bの方が長ければbが大きい(含む同文字列長)
+		if(i>=a.length)	return 1;	//	aの方が長ければaが大きい
+		if(#a[i]<#b[i])			return -1;	//	一文字ずつ比較
+		else if(#a[i]>#b[i])	return 1;
+		i++;
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	シェルソート
+/	in	: keys		シェルソートするArray
+/		: compare	比較関数(a<bのとき0より大きな整数を返す)
+/	out	: 
+/----------------------------------------------------------------------------*/
+function shellsort(keys, compare=void)
+{
+	if(keys.count<1)	return;
+	if(compare==void)
+		compare = function(a,b) { return a<b; };	//	単純比較の昇順
+
+	var SHELL	= 3;
+	var shell;
+	for(shell = 1; shell < keys.count; shell = shell * SHELL + 1);
+
+	while(shell > 0)
+	{
+		for(var i=shell; i<keys.count; i++)
+		{
+			var num = i;
+			var tmp = keys[num];
+			while((num >= shell) && compare(tmp, keys[num - shell])>0)
+			{
+				keys[num]	= keys[num - shell];
+				num -= shell;
+			}
+			keys[num] = tmp;
+		}
+		shell \= SHELL;
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	指定のオブジェクトを解放する
+/	in	: a	オブジェクト
+/	out	: 
+/----------------------------------------------------------------------------*/
+function release(a)
+{
+	invalidate a if a!=void;
+}
+
+/*-----------------------------------------------------------------------------
+/	微小物の放物運動
+/	in	: vx0, vy0	初速(画面座標系:pixel/ms^2)
+/		: t			時刻(ms)
+/		: a			断面積(mm^2)
+/		: cd		空気抵抗係数
+/	out	: [vx_t, vy_t, px, py]	指定時刻での速度と座標
+/----------------------------------------------------------------------------*/
+function getParabolaMotion(vx0, vy0, t, a=0.0, cd=0.0)
+{
+	if(a!=0.0 && cd!=0.0)
+		return getParabolaMotionWithAirResistance(...);
+
+	var vy_t	= vy0 + AoG * t;
+
+	var px	= vx0 * t;
+	var py	= vy0 * t + 0.5 * AoG * t * t;
+
+	return [vx0, vy_t, px, py];
+}
+
+function getParabolaMotionWithAirResistance(vx0, vy0, t, a, cd)
+{
+	var k	= 0.5 * cd * a * AirDensity;	//	抵抗係数
+
+	var E	= Math.exp(-k * t);
+	var C1_k= 1.0 / k;
+	var Cg_k= AoG * C1_k;
+
+	//	指定時刻での速度
+	var vx_t= vx0 * E;
+	var vy_t= Cg_k + (vx0 - Cg_k) * E;
+
+	//	指定時刻での位置
+	var px	= (vx0 / k) * (1.0 - E);
+	var py	= Cg_k * t + C1_k * (vy0 - Cg_k) * (1 - E);
+
+	return [vx_t, vy_t, px, py];
+}
+
+/*-----------------------------------------------------------------------------
+/	回転するアフィン行列
+/	in	: cx, cy	中心座標
+/		: rad		角度(ラジアン)
+/	out	: [[m00, m01], [m10, m11], [m20, m21]]	アフィン行列
+/----------------------------------------------------------------------------*/
+function getRotateAffine(cx, cy, rad)
+{
+	var sin	= Math.sin(rad);
+	var cos	= Math.cos(rad);
+	return [[cos, -sin], [sin, cos], [cx-cx*cos-cy*sin, cy+cx*sin-cy*cos]];
+}
+
+/*-----------------------------------------------------------------------------
+/	逆正接関数(2)
+/	in	: x, y	二辺
+/	out	: 角度(ラジアン:-PI〜PI)
+/----------------------------------------------------------------------------*/
+function atan2(x, y)
+{
+	if(x == 0.0)
+		x	= 0.0000000000000000000000000000000000000000000001;
+
+	var rad	= Math.atan(Math.abs(y/x));
+	if(y<=0)
+	{
+		if(x>=0)
+			return rad;	//	第一象限
+		else
+			return Math.PI - rad;	//	第二象限
+	}
+	else
+	{
+		if(x<0)
+			return Math.PI + rad;	//	第三象限
+		else
+			return Math.PI + Math.PI - rad;	//	第四象限
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	LinearMoverEx
+/----------------------------------------------------------------------------*/
+//	left, topを転用可能なMover
+class LinearMoverEx extends LinearMover
+{
+	function LinearMoverEx()
+	{
+		super.LinearMover(...);
+	}
+
+	function stopMove()
+	{
+		// 移動を終わる
+		if(moving)
+		{
+			// 最終位置に移動
+			if(layer isvalid)
+			{
+				var idx = int(pointCount*3);
+				var p = path;
+//				layer.setPos(p[idx], p[idx+1]);
+				updateData(p[idx], p[idx+1]);
+				layer.opacity = p[idx+2];
+			}
+			System.removeContinuousHandler(handler);
+			moving = false;
+			finalFunction();
+		}
+	}
+
+	function handler(tick)
+	{
+		// 移動中に呼ばれる
+		if(nextStop || !(layer isvalid)) { stopMove();  return; }
+		if(first) startTick = tick, first = false;
+		tick -= startTick;
+		if(tick >= totalTime)
+		{
+			nextStop = true;
+			var idx = int(pointCount*3);
+			var p = path;
+//			layer.setPos(p[idx], p[idx+1]);
+			updateData(p[idx], p[idx+1]);
+			layer.opacity = p[idx+2];
+			return;
+		}
+
+		if(accel < 0)
+		{
+			// 上弦 ( 最初が動きが早く、徐々に遅くなる )
+			tick = 1.0 - tick / totalTime;
+			tick = Math.pow(tick, -accel);
+			tick = int ( (1.0 - tick) * totalTime );
+		}
+		else if(accel > 0)
+		{
+			// 下弦 ( 最初は動きが遅く、徐々に早くなる )
+			tick = tick / totalTime;
+			tick = Math.pow(tick, accel);
+			tick = int ( tick * totalTime );
+		}
+
+		move(tick);
+	}
+
+	function move(tick)
+	{
+		var index = tick \ time * 3;
+		var ratio = tick % time / time;
+		var p = path;
+		var sx = p[index];
+		var sy = p[index+1];
+		var so = p[index+2];
+		var ex = p[index+3];
+		var ey = p[index+4];
+		var eo = p[index+5];
+
+		var l = int((ex-sx)*ratio + sx);
+		var t = int((ey-sy)*ratio + sy);
+		var o = eo >= 256 ? so : int((eo-so)*ratio + so);
+
+//		layer.setPos(l, t);
+		updateData(l, t);
+		layer.opacity = o;
+	}
+
+	function updateData(a, b)
+	{
+		//	実際に、レイヤーに値を設定する。
+		//	※	ここをOverrideすれば他の値を変化させることも可能
+		layer.setPos(a, b);
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	LinearMoverImgPosY
+/----------------------------------------------------------------------------*/
+//	imageTop, opacity が移動可能なMover
+class LinearMoverImgPosY extends LinearMoverEx
+{
+	function LinearMoverImgPosY()
+	{
+		super.LinearMoverEx(...);
+	}
+
+	function updateData(a, b)
+	{
+		//	a(一番目の要素)は無視する
+		layer.imageTop = b;
+	}
+}
+
+//-	音関係 --------------------------------------------------------------------
+var lastPlaying = [];	//	再生中であったBGMの履歴
+var lastLooping = [];	//	BGMがループ再生であったか？
+var BGMFadeTime	= 1000;	//	デフォルトのフェード時間
+var BGMOverlap	= 800;	//	デフォルトのオーバーラップ時間
+/*-----------------------------------------------------------------------------
+/	BGM切り替え
+/	in	: file		再生ファイル
+/		: fadetime	フェード時間
+/		: overlap	オーバーラップ時間
+/	out	: 
+/----------------------------------------------------------------------------*/
+function changeBGM(file, time=BGMFadeTime, overlap=BGMOverlap)
+{
+	if(file=="")
+		return;
+
+	var bgm = kag.bgm;
+	var lf = bgm.playingStorage;
+	if(lf!=file)
+	{
+		lastPlaying.add(lf);
+		lastLooping.add(bgm.looping);
+
+		bgm.exchange(%[storage:file, loop:looping, time:time, overlap:overlap]);
+		dm("BGM: "+lf+" -> "+file);
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	BGM修復
+/	in	: fadetime	フェード時間
+/		: overlap	オーバーラップ時間
+/	out	: 
+/----------------------------------------------------------------------------*/
+function restoreBGM(time=BGMFadeTime, overlap=BGMOverlap)
+{
+	var bgm = kag.bgm;
+	if(lastPlaying.count>0)
+	{
+		var no = lastPlaying.count-1;
+		var lf = lastPlaying[no];
+		var lp = lastLooping[no];
+		bgm.exchange(%[storage:lf, loop:lp, time:time, overlap:overlap]) if lf!=bgm.playingStorage;
+		dm("BGM: "+bgm.playingStorage+" -> "+lf);
+
+		lastPlaying.erase(no);
+		lastLooping.erase(no);
+	}
+	else
+	{
+		stopBGM(...);
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	BGM停止
+/	in	: fadetime	フェード時間
+/		: overlap	オーバーラップ時間
+/	out	: 
+/----------------------------------------------------------------------------*/
+function stopBGM(time=BGMFadeTime, overlap=BGMOverlap)
+{
+	var bgm	= kag.bgm;
+	bgm.stopFade();
+	bgm.fadeOut(%["time" => time]);
+	dm("BGM: "+bgm.playingStorage+" -> stop");
+	bgm.playingStorage	= "";//	playingStorageを再生中かのキーに使っている
+							//	ので、フェードが終わるよりも先に無効にして
+							//	いる
+}
+
+/*-----------------------------------------------------------------------------
+/	ビット演算のNOT
+/	in	: 
+/	out	: 
+/----------------------------------------------------------------------------*/
+function NOT(value)
+{
+	return 0xFFFFFFFF ^ value;
+}
+
+/*-----------------------------------------------------------------------------
+/	効果音バッファの選択
+/	in	: file	再生を行う効果音ファイル名
+/		: loop	ループ再生を行うか？
+/	out	: 
+/----------------------------------------------------------------------------*/
+function selectSoundBuffer(file, loop=false)
+{
+	var cur = f.current_SEbuffer;
+	var i;
+	for(i=kag.numSEBuffers-1; i>=0; i++)
+	{
+		cur++;
+		cur = 0 if cur>=kag.numSEBuffers;
+		if(f.current_SEfile[cur]=="")
+			break;
+	}
+	if(i<0)
+		new Exception("効果音再生バッファの数が不足しています！");
+	f.bufno	= f.current_SEbuffer	= cur;
+	if(loop)
+		f.current_SEfile[cur] = file;
+	dm(file+"の効果音再生バッファ: "+f.bufno);
+}
+
+/*-----------------------------------------------------------------------------
+/	効果音の再生
+/	in	: file	再生するファイル
+/		: nowait	フェードアウト終了を待たない(Def:true)
+/	out	: 
+/----------------------------------------------------------------------------*/
+function playSoundBuffer(file, nowait=true)
+{
+	if(nowait=="")	nowait	= true;
+	selectSoundBuffer(file, false);
+	var handlers	= kag.getHandlers();
+	handlers["playse"](%[buf:f.bufno,storage:file]);
+	if(nowait!=true)
+		handlers["ws"](%[]);
+	f.current_SEfile[f.current_SEbuffer]	= "";	//	鳴り終わったので、ファイル名をクリア
+}
+
+/*-----------------------------------------------------------------------------
+/	効果音のループ再生
+/	in	: file	再生するファイル
+/		: time	フェードイン時間(Def:0)
+/		: nowait	フェードイン終了を待たない(Def:true)
+/	out	: 
+/----------------------------------------------------------------------------*/
+function loopSoundBuffer(file, time=0, nowait=true)
+{
+	if(nowait=="")	nowait	= true;
+	selectSoundBuffer(file, true);
+	var handlers	= kag.getHandlers();
+	if(+time<1)
+		handlers["playse"](%[buf:f.bufno,storage:file,loop:true]);	//	フェードインなしで再生開始
+	else
+	{
+		handlers["fadeinse"](%[buf:f.bufno,storage:file,time:time,loop:true]);
+		if(nowait!=true)
+			handlers["wait"](%[time:time,canskip:false,mode:normal]);
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	ループ効果音の停止
+/	in	: file	停止する効果音ファイル名
+/		: time	フェード時間(指定が無ければフェードしない)
+/		: nowait	フェードの終了を待つか？(Def:false)
+/	out	: 
+/----------------------------------------------------------------------------*/
+function stopSoundBuffer(file, time=0, nowait=false)
+{
+	var bufno = -1;
+	var num = kag.numSEBuffers;
+
+	//	ファイル名が指定されているなら、対応するバッファ番号を調べる
+	if(file!="")
+	{
+		for(var i=num-1; i>=0; i--)
+		{
+			//	指定のファイルが再生されていて且つループ中の時)
+			if(f.current_SEfile[i]==file)
+				bufno = i;
+		}
+		if(bufno<0)
+		{
+			for(var i=0; i<num; i++)
+				dm("効果音バッファ["+i+"]の再生ファイル: "+f.current_SEfile[i]);
+			var msg = "指定のファイル「"+file+"」はループ再生されていません！\nファイル名の指定を間違えている可能性があります。\nShift+F4ボタンを押して、間違えている個所を確認してください。";
+			throw new Exception(msg);
+		}
+	}
+	dm(file+"の効果音ループ再生中のバッファ: "+bufno);
+
+	var handlers	= kag.getHandlers();
+	if(bufno>=0)
+	{
+		//	バッファを指定して停止する
+		if(bufno<100)
+		{
+			if(time>0)
+			{
+				handlers["fadeoutse"](%["buf"=>bufno, "time"=>time]);
+				if(!nowait)
+					handlers["wait"](%["time"=>time, "canskip"=>false, "mode"=>"normal"]);
+			}
+			else
+				handlers["stopse"](%["buf"=>bufno]);
+			f.current_SEfile[bufno]	= "";
+		}
+	}
+	else
+	{
+		//	すべて停止する
+		if(time>0)
+		{
+			for(var i=num-1; i>=0; i--)
+			{
+				handlers["fadeoutse"](%["buf"=>i, "time"=>time]);
+				f.current_SEfile[i]	= "";
+			}
+			if(!nowait)
+				handlers["wait"](%["time"=>time, "canskip"=>false, "mode"=>"normal"]);
+		}
+		else
+		{
+			for(var i=num-1; i>=0; i--)
+			{
+				handlers["stopse"](%["buf"=>i]);
+				f.current_SEfile[i]	= "";
+			}
+		}
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	
+/	in	: 
+/	out	: 
+/----------------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------------
+/	
+/	in	: 
+/	out	: 
+/----------------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------------
+/	
+/	in	: 
+/	out	: 
+/----------------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------------
+/	End of File
+/----------------------------------------------------------------------------*/
+@endif

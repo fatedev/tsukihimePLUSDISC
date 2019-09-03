@@ -1,0 +1,73 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		このソフトについて、ウィンドウ
+/----------------------------------------------------------------------------*/
+@if(__ABOUTWINDOW_DEFINED__==0)
+@set(__ABOUTWINDOW_DEFINED__=1)
+
+Scripts.execStorage("TextScrollLayer.tjs");
+
+class AboutWindow extends Window
+{
+	var staffrollfile	= "staffroll.txt";
+	var bgimage	= "about";
+
+	var primary;
+	var scroll;
+
+	function AboutWindow()
+	{
+		super.Window(...);
+		caption	= "PLUS+DISCについて";
+
+		borderStyle = bsDialog;
+		innerSunken = false;
+
+		add(primary = new Layer(this, null));
+		with(primary)
+		{
+			.loadImages(bgimage);
+			.setSizeToImageSize();
+			setInnerSize(.width, .height);
+			.font.height= 12;
+			.font.face	= "MS UI Gothic";
+			var text = Version;
+			var th	= .font.getTextHeight(text);
+			.drawText(0, 0, text, 0xC6113B, 255, true, 1024, 0xFFFFFF, 4, 0, 0);
+			text	= "/KAG " + kagVersion;
+			.drawText(.width-.font.getTextWidth(text)-2, 0, text, 0xC6113B, 255, true, 1024, 0xFFFFFF, 4, 0, 0);
+			text	= "吉里吉里 Ver." + System.versionString;
+			.drawText(.width-.font.getTextWidth(text)-2, th, text, 0xC6113B, 255, true, 1024, 0xFFFFFF, 4, 0, 0);
+			.visible	= true;
+		}
+
+		add(scroll = new global.TextScrollLayer(this, primary, 0x00000000, 18, staffrollfile));
+		with(scroll)
+		{
+			.setSize(310, 80);
+			.setPos(5, 105);
+			.textcolor	= 0xC6113B;
+			.shadowcolor	= 0xFFFFFF;
+			.shadowwidth	= 2;
+			.shadowlevel	= 1024;
+			.visible	= true;
+			.startScroll();
+		}
+
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function onScrollEnd(obj)
+	{
+		close();	//	スクロールが終了したら閉じる
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	
+/----------------------------------------------------------------------------*/
+@endif

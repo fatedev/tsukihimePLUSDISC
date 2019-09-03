@@ -1,0 +1,111 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		進行度に応じて処理を行うプラグインのベース
+/----------------------------------------------------------------------------*/
+@if(__RENDERPLUGIN_DEFINED__==0)
+@set(__RENDERPLUGIN_DEFINED__=1)
+
+Scripts.execStorage("subroutine.tjs");
+
+class RenderPlugin extends KAGPlugin
+{
+	var window;
+
+	var triggername	= "render";
+
+	var time	= 400;
+	var accel	= 0;
+	var starttick;
+	var rendering;
+
+	function RenderPlugin(win)
+	{
+		super.KAGPlugin(...);
+		window		= win;
+		rendering	= false;
+	}
+
+	function finalize()
+	{
+		stop();
+		super.finalize(...);
+	}
+
+	function init(elm)
+	{
+		start(elm);
+	}
+
+	function start(elm)
+	{
+		time	= +elm.time if elm.time!==void;
+		accel	= +elm.accel if elm.accel!==void;
+
+		starttick	= System.getTickCount();
+		System.addContinuousHandler(handler);
+		rendering	= true;
+	}
+
+	function handler(tick)
+	{
+		var past	= tick - starttick;
+		var per;
+
+		if(past>time)
+			stop();
+		else
+			render(calcAccel(per = past / time, accel));
+	}
+
+	function finish()
+	{
+	}
+
+	function stop()
+	{
+		if(rendering)
+		{
+			window.trigger(triggername);
+			System.removeContinuousHandler(handler);
+			finish();
+			rendering	= false;
+		}
+	}
+
+	function render(per)
+	{
+		//	描画の処理を進行度(per)に沿って行う
+	}
+
+	function onStore(f, elm)
+	{
+		// 栞を保存するとき
+	}
+
+	function onRestore(f, clear, elm)
+	{
+		// 栞を読み出すとき
+		stop(); // 動作を停止
+	}
+
+	function onStableStateChanged(stable)
+	{
+	}
+
+	function onMessageHiddenStateChanged(hidden)
+	{
+	}
+
+	function onCopyLayer(toback)
+	{
+	}
+
+	function onExchangeForeBack()
+	{
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	
+/----------------------------------------------------------------------------*/
+@endif

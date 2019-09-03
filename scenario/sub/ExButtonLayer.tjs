@@ -1,0 +1,558 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) 1999-2002 TYPE-MOON All Rights Reserved.
+/	拡張されたボタン
+/----------------------------------------------------------------------------*/
+@if(__EXBUTTONLAYER_DEFINED__==0)
+@set(__EXBUTTONLAYER_DEFINED__=1)
+
+Scripts.execStorage("FadeLayer.tjs");
+var ExButtonName = "Exボタン";
+class ExButtonLayer extends FadeLayer
+{
+	var imgfile;
+	var _state;		//	状態(0:通常/1:マウスオン/2:押した瞬間/3:オン/4:オンのときにマウスオン/5:無効)
+	var elder;		//	長兄
+	var bros;		//	弟
+	var id;
+	var _mode;		//	0:押されるだけで画像が5枚(none/enter/click/on/disable)
+					//	1:状態保持で画像が6枚(none/enter/click/on/on&enter/disable)
+					//	2:ラジオボタンで画像が6枚(　〃　)
+					//	3:押されるだけで画像が4枚(none/enter/click/disable)
+					//	4:ラジオボタンで画像が4枚(none/enter/click&on/disable)
+					//	5:押されるだけで画像が6枚(none/enter/click/on/on&enter/disable)
+	var _type;		//	0:押されるだけ/1:状態保持/2:ラジオボタン
+	var typeByMode = [ 0, 1, 2, 0, 2, 0 ];
+	var septByMode = [ 5, 6, 6, 4, 4, 6 ];	//	モードによって、ボタン画像をいくつに分割するか変わる
+	var nextstate;	//	押されたボタンが次にどの状態に移動するか
+	var lasthint;
+	var onkeydown;	//	簡易キー処理呼び出し
+
+	var entersound;
+
+	var isloaded;
+
+	var laststate;	//	無効になったとき、直前の状態を残しておく
+
+	function ExButtonLayer(win, par, id="", l=0, t=0, img="", hint="", eldest=true)
+	{
+		super.FadeLayer(...);
+
+		this.id		= id;
+		this.hint	= hint;
+		lasthint	= hint;
+		hitType		= htMask;
+		hitThreshold= 64;
+		mode	= 1;
+
+		//	ボタン初期化
+		width	= 0;
+		height	= 0;
+		isloaded	= false;
+		load(img);
+
+		elder	= this if eldest;	//	普通に作った奴が長兄
+		state	= 0;
+		laststate	= 0;
+
+		left	= l;
+		top		= t;
+	}
+
+	function finalize()
+	{
+		invalidate bros if bros!=void;
+		super.finalize(...);
+	}
+
+	function load(img)
+	{
+//		dm("load: "+img);
+		if(img!="")
+		{
+			imgfile = img;
+			loadImages(img);
+			setSize(imageWidth\septByMode[mode], imageHeight);
+			name	= ExButtonName+": "+img;
+
+			isloaded	= true;
+		}
+	}
+
+	function create(id, l, t, img, hint)
+	{
+		return new global.ExButtonLayer(window, parent, id, l, t, img, hint, false);
+	}
+
+	function add(id, l, t, img, hint)
+	{
+		var cur = this;
+		while(cur.bros!=void)	cur = cur.bros;
+//		cur.bros	= new global.ExButtonLayer(window, parent, id, l, t, img, hint, false);
+		cur.bros	= create(...);
+		cur.bros.elder	= elder;	//	長兄を追加
+
+		return cur.bros;
+	}
+
+	//	任意のIDを持つボタンを削除する
+	//	返り値は新しい先頭ボタンなので、必ず受け取ること！
+	function del(id)
+	{
+		var cur = elder;
+		if(cur.id == id)
+		{
+			//	長兄を削除する
+			var e = cur.bros;
+			cur = e;
+			while(cur.bros!=void)
+			{
+				//	elderを更新
+				cur.elder	= e;
+				cur			= cur.bros;
+			}
+			invalidate cur;
+			return e;
+		}
+		else
+		{
+			var next	= cur.bros;
+			do
+			{
+				if(next.id==id)
+				{
+					cur.bros = next.bros;
+					invalidate next;
+					return elder;
+				}
+				cur = next;
+				next= cur.bros;
+			}
+			while(next!=void);
+		}
+		return elder;
+	}
+
+	function get(id)
+	{
+//		dm("get button("+id+")");
+		var cur = elder;
+		while(cur!=void && cur.id!=id)	cur = cur.bros;
+		return cur;
+	}
+
+	function on()
+	{
+//		dm("button on: "+name);
+		state	= 3;
+	}
+
+	function onWithoutOther()
+	{
+		on();			//	自分をON
+		elder.off(this);//	自分以外をOFF
+	}
+
+	function off(all=false)
+	{
+		if(typeof all == "Object")
+		{
+			//	ボタンが指定されていたら、それ以外のものをOFFにする
+			var cur = elder;
+			while(cur!=void)
+			{
+//				dm("off : "+cur.name+" = "+all);
+				cur.state = 0 if cur.isOn && cur!=all;
+				cur = cur.bros;
+			}
+		}
+		else if(all)
+		{
+			var cur = elder;
+			while(cur!=void)
+			{
+				cur.state = 0 if cur.isOn;
+				cur = cur.bros;
+			}
+		}
+		else
+			state = 0 if !isDisable;
+	}
+
+	function enableAll(flag)
+	{
+		//	enabledプロパティを変更する
+		var cur = elder;
+		while(cur!=void)
+		{
+			cur.enabled	= flag;
+			cur = cur.bros;
+		}
+	}
+
+	function visibleAll(flag)
+	{
+		//	visibleプロパティを変更する
+		var cur = elder;
+		while(cur!=void)
+		{
+			cur.visible	= flag;
+			cur = cur.bros;
+		}
+	}
+
+	function execAll(funcname, arg1, arg2, arg3)
+	{
+		//	すべてのボタンで指定の処理を行う
+		var cur = elder;
+		while(cur!=void)
+		{
+			cur[funcname](arg1, arg2, arg3);
+			cur = cur.bros;
+		}
+	}
+
+	function execOuterFunc(func, arg1=void, arg2=void)
+	{
+		var cur = elder;
+		while(cur!=void)
+		{
+			func(cur, arg1, arg2);
+			cur = cur.bros;
+		}
+	}
+
+	function setAll(param, value)
+	{
+		var cur = elder;
+		while(cur!=void)
+		{
+			cur[param] = value;
+			cur = cur.bros;
+		}
+	}
+
+	function show(time, accel, all=true)
+	{
+		//	表示開始
+		opacity	= 0;
+		fade(255, time, accel);
+		focusable	= true;
+
+		bros.show(time, accel) if bros!==void && all;	//	すべて表示なら、弟にも指令する
+	}
+
+	function hide(time, accel, all=true)
+	{
+		//	消去
+		fade(0, time, accel);
+		focusable	= false;
+
+		bros.hide(time, accel) if bros!==void && all;	//	すべて消去なら、弟にも指令する
+	}
+
+	function draw()
+	{
+//		dm("draw["+id+"]: "+name);
+		imageLeft	= -width * state;
+	}
+
+	function erase(all=true)
+	{
+		//	弟以下のボタンを削除
+		var cur = bros;
+		while(cur!=void)
+		{
+			var next= cur.bros;
+			invalidate cur;
+			cur		= next;
+		}
+		bros = void;
+	}
+
+	function readyVisible()
+	{
+		focusable	= true;
+		opacity		= 255;
+		visible		= true;
+	}
+
+	function changePushButton(vis=false)
+	{
+		mode	= 0;
+		if(vis)	readyVisible();
+	}
+
+	function changeSwitch(vis=false)
+	{
+		mode	= 1;
+		if(vis)	readyVisible();
+	}
+
+	function changeRadioButton(vis=false)
+	{
+		mode	= 2;
+		if(vis)	readyVisible();
+	}
+
+///	イベント処理 ///
+	function onPaint()
+	{
+		super.onPaint(...);
+		draw();
+	}
+
+	function onMouseEnter()
+	{
+		if(focusable)
+		{
+			if(focused)
+				onFocus();
+			else
+				focus();
+		}
+	}
+
+	function onMouseLeave()
+	{
+		if(focusable)
+			onBlur();
+	}
+
+	function onMouseDown(x, y, button, shift)
+	{
+		if(button==mbLeft && focusable)
+		{
+			switch(state)
+			{
+			case 0:
+			case 1:
+				state	= 2;		//	一度押された状態になって、
+				if(_type!=0)
+					nextstate	= 4;	//	押されるだけボタン以外
+				else
+					nextstate	= 1;
+				return true;
+
+			case 3:
+			case 4:
+				state	= 2;		//	一度押された状態になって、
+				if(_type!=2)
+					nextstate	= 1;	//	ラジオボタン以外
+				else
+					nextstate	= 4;	//	OFF->ONにはなってもON->OFFにはならない(ラディオボタン用)
+				return true;
+			}
+		}
+		else if(button==mbRight)
+			parent.onMouseDown(...);	//	親へ送る
+		return false;
+	}
+
+	function onMouseUp(x, y, button, shift)
+	{
+//		dm("onMouseUp("+name+")");
+		if(button==mbLeft && state == 2 && focusable)
+		{
+			state	= nextstate;
+			if(state==4 || _type==0)
+			{
+				//	オンになったときはDOWNメッセージ
+				//	オフになったときでも、オンしか感知しないボタンならDOWNメッセージ
+				if(typeof parent.onButtonDown != "undefined")
+					parent.onButtonDown(this);
+				if(_type==2)
+					off(this);	//	ラジオボタンなので、自身以外をOFFにする
+			}
+			else
+			{
+				//	オフになったときはUPメッセージ
+				if(typeof parent.onButtonUp != "undefined")
+					parent.onButtonUp(this);
+			}
+			return true;
+		}
+		return false;
+	}
+
+	function onFocus()
+	{
+		if(!isDisable)
+		{
+			if(state<3)
+			{
+				if(state!=1)
+				{
+					state	= 1;
+					playSE(entersound);
+				}
+			}
+			else if(state!=4)
+			{
+				state	= 4;
+				playSE(entersound);
+			}
+		}
+	}
+
+	function onBlur()
+	{
+		if(!isDisable)
+		{
+			if(state<3)
+				state	= 0;
+			else
+				state	= 3;
+		}
+	}
+
+	function onKeyDown(key, shift)
+	{
+		//	外部での処理が定義されていれば、それを処理する
+		var process = true;
+		if(onkeydown != void)
+			process = onkeydown(this, key, shift);
+
+		//	決定とキャンセルに対応したマウスメッセージを送る
+		if(process && !shift)
+		{
+			switch(key)
+			{
+			case VK_RETURN:
+			case VK_SPACE:
+				onMouseDown(0, 0, mbLeft);
+				onMouseUp(0, 0, mbLeft);
+				process = false;
+				break;
+
+			case VK_ESCAPE:
+			case VK_BACK:
+			case VK_DELETE:
+			case VK_HOME:
+				onMouseDown(0, 0, mbRight);
+				process = false;
+				break;
+			}
+		}
+		super.onKeyDown(key, shift, process);
+	}
+
+///	プロパティ ///
+	property state
+	{
+		setter(s)
+		{
+//			dm(id+": "+state+" -> "+s);
+			if(s!==state)
+			{
+				_state	= s;
+				update();
+			}
+		}
+		getter	{ return _state; }
+	}
+
+	property isDisable
+	{
+		getter	{ return state==septByMode[mode]-1; }
+	}
+
+	property mode
+	{
+		setter(m)
+		{
+			if(m<0 || m>=septByMode.count)
+				return;
+
+			_mode	= m;
+			_type	= typeByMode[m];
+
+			//	画像が読み込まれているなら、表示幅をモードによって変化させる
+			if(isloaded)
+				width	= imageWidth \ septByMode[m];
+		}
+		getter	{ return _mode; }
+	}
+
+	property isOn
+	{
+		getter	{ return state==3 || state==4; }
+	}
+
+	property enabled
+	{
+		setter(e)
+		{
+			if(e!=super.enabled)
+			{
+//				dm(id+".enabled: "+super.enabled+" -> "+e);
+				super.enabled	= e;
+				if(e)
+				{
+					state	= laststate;
+					hitThreshold= 64;
+				}
+				else
+				{
+					laststate	= state;
+					state		= septByMode[mode]-1;	//	無効
+					hitThreshold= 256;	//	マウスメッセージを受け取らない
+				}
+			}
+		}
+		getter	{ return super.enabled; }
+	}
+}
+
+/*-----------------------------------------------------------------------------
+/	ボタンを作成するルーチン
+/	in	: win		ウィンドウ
+/		: par		親レイヤー
+/		: btndata	ボタン作成情報(0:mode/1:id/2:画像ファイル/3:ヒント[/4:left/5:top])
+/		: focusable	フォーカスを受け取るか
+/		: visible	表示状態
+/		: opacity	不透明度
+/		: baseleft, basetop	基本位置(等間隔で並べる時用/いずれかがvoidならbtndata[3]と[4]を使う)
+/		: stepx, stepy		一つボタンを置く毎の移動量
+/	out	: ボタングループ
+/----------------------------------------------------------------------------*/
+function createButtons(win, par, btndata, focusable=true, visible=true, opacity=255, baseleft=void, basetop=void, stepx=0, stepy=0)
+{
+	var btn, btns;
+	var l=baseleft, t=basetop;
+	for(var i=0; i<btndata.count && btndata[i]!=void; i++)
+	{
+		if(l===void && t===void)
+		{
+			if(btns===void)
+				btn = btns = new ExButtonLayer(win, par, btndata[i][1], btndata[i][4],
+					btndata[i][5], btndata[i][2], btndata[i][3]);
+			else
+				btn = btns.add(btndata[i][1], btndata[i][4], btndata[i][5],
+					btndata[i][2], btndata[i][3]);
+		}
+		else
+		{
+			if(btns===void)
+				btn = btns = new ExButtonLayer(win, par, btndata[i][1], l, t,
+					btndata[i][2], btndata[i][3]);
+			else
+				btn = btns.add(btndata[i][1], l, t, btndata[i][2], btndata[i][3]);
+
+			//	次の場所へ移動
+			l += stepx;
+			t += stepy;
+		}
+
+		btn.mode		= btndata[i][0];
+		btn.focusable	= focusable;
+		btn.visible	= visible;
+		btn.opacity	= opacity;
+	}
+
+	return btns;
+}
+
+/*----------------------------------------------------------------------------/
+/
+/----------------------------------------------------------------------------*/
+@endif

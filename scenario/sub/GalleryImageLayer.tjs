@@ -1,0 +1,345 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		全画面の画像を表示するレイヤー
+/----------------------------------------------------------------------------*/
+@if(__GALLERYIMAGELAYER_DEFINED__==0)
+@set(__GALLERYIMAGELAYER_DEFINED__=1)
+
+Scripts.execStorage("ShrinkLayer.tjs");
+
+class GalleryImageLayer extends HorizontalShrinkLayer
+{
+	var curno;
+	var filenames;
+
+	var title;
+	var titledata = [ "wallpaper", 0, 8 ];
+
+	var buttons;
+	var buttondata = [
+		[ 3, "set",		"gl_setpaper",	"壁紙に設定します。", 317, 424 ],
+		[ 3, "prev",	"gl_leftpaper",	"前の画像を表示します。", 427, 425 ],
+		[ 3, "next",	"gl_rightpaper","次の画像を表示します。", 478, 425 ],
+		[ 3, "back",	"gl_back",		"サムネール一覧に戻ります。", 522, 425 ]
+	];
+
+	var sizebuttons;
+	var sizebuttondata = [
+		[ 2, "svga",	"gl_svga",	"800x600(SVGA)の画像を使います。", 5, 350 ],
+		[ 2, "xga",		"gl_xga",	"1024x768(XGA)の画像を使います。", 65, 350 ],
+		[ 2, "qvga",	"gl_qvga",	"1280x960(QuadVGA)の画像を使います。", 125, 350 ]
+	];
+	var screensize2screenmode = %[
+		800		=> "svga",
+		1024	=> "xga",
+		1280	=> "qvga"
+	];
+	var max_screenmode	= "qvga";
+	var size;
+	var extension	= "_smpl";
+
+	var modebuttons;
+	var modebuttondata = [
+		[ 2, "center",	"gl_center",	"中央に表示します。",	5, 415 ],
+		[ 2, "tile",	"gl_tile",		"並べて表示します。(Tile)",	65, 415 ],
+		[ 2, "magnify",	"gl_magnify",	"デスクトップいっぱいに拡大して表示します。",	125, 415 ]
+	];
+	var normalmode	= "center";
+	var tile	= false;
+	var magnify	= false;
+
+	var layers = [];
+	var curlayer;
+
+	var lastfocused;
+
+	var _state;	//	0:画像のみ/1:ボタンも表示
+
+	var enter_se	= "plus_se01.wav";	var ese="entersound";
+	var click_se	= "plus_se02.wav";
+	var rclick_se	= "plus_se03.wav";
+	var setwp_se	= "plus_se06.wav";
+	var return_se	= "plus_se07.wav";
+
+	function GalleryImageLayer(win, par)
+	{
+		super.HorizontalShrinkLayer(win, par, win.scHeight, win.scWidth, win.scWidth\2);
+		name	= "画像表示";
+
+		//	タイトル
+		title	= new global.FadeLayer(win, this);
+		title.loadImages(titledata[0]);
+		title.setSizeToImageSize();
+		title.setPos(titledata[1], titledata[2]);
+
+		//	ボタン
+		buttons	= createButtons(win, this, buttondata,,false,0);	//	最初は透明
+		buttons.setAll(ese, enter_se);
+
+		sizebuttons	= createButtons(win, this, sizebuttondata,,false,0);
+		size	= screensize2screenmode[System.screenWidth];	//	System.desktopWidthだと、タスクバーの影響で実際のサイズとは違ったりする
+		if(size === void)
+			size	= max_screenmode;
+		sizebuttons.get(size).on();
+		sizebuttons.setAll(ese, enter_se);
+
+		modebuttons	= createButtons(win, this, modebuttondata,,false,0);
+		modebuttons.get(normalmode).on();
+		modebuttons.setAll(ese, enter_se);
+
+		layers[0]	= this;
+		layers[1]	= new GalleryImageFlipLayer(win, par, win.scHeight, win.scWidth, win.scWidth\2, 0, this);
+		curlayer	= 0;
+
+		focusable	= true;
+		visible		= true;
+		state		= 0;
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function show(no, time=void, accel=void)
+	{
+		orifice	= 0;
+		visible	= true;
+		loadImages(filenames[curno = no]+extension);
+		changeOrifice(, time, accel);
+		parent.setFocusable(false);
+		focus();
+	}
+
+	function hide(time=void, accel=void)
+	{
+		parent.setFocusable(true);
+		layers[curlayer].changeOrifice(0, time, accel, onHided);
+		playSoundBuffer(return_se);
+	}
+
+	function change(no, time=150)
+	{
+		if(!inTransition)
+		{
+			lastfocused	= window.focusedLayer;
+			inTransition	= true;
+			var nl = (curlayer + 1) & 1;
+			var next = layers[nl];
+			var cur = curlayer;
+			curlayer	= nl;
+			dm(@"change. ${layers[cur].name} → ${next.name}(${next.left}, ${next.top})");
+			with(next)
+			{
+				//	裏レイヤーに変更先画像を読み込む
+				.loadImages(filenames[curno = no]+extension);
+				.isUpdate	= false;
+				.orifice	= layers[nl].imageWidth;
+				.isUpdate	= true;
+				.visible	= true;
+
+				//	トランジション実行
+				layers[cur].beginTransition(%[method:"crossfade", children:false, time:time], next);
+			}
+		}
+	}
+
+	function onTransitionCompleted(dest, src)
+	{
+		super.onTransitionCompleted(...);
+		dm(@"completed. ${src.name} → ${dest.name}(${dest.left}, ${dest.top})");
+		dest.moveBehind(src);
+		dest.visible	= false;
+		lastfocused.focus();
+	}
+
+	function onHided()
+	{
+		state	= 0;
+
+		title.parent	= layers[0];
+		buttons.setAll("parent", layers[0]);
+		sizebuttons.setAll("parent", layers[0]);
+		modebuttons.setAll("parent", layers[0]);
+		curlayer	= 0;
+		layers[1].moveBehind(layers[0]);
+	}
+
+	function onButtonDown(btn)
+	{
+		dm("button down: "+btn.id);
+		switch(btn.id)
+		{
+		case "prev":
+			var no = curno - 1;
+			if(no<0)
+				no	= filenames.count - 1;
+			change(no);
+			break;
+		case "next":
+			var no = curno + 1;
+			if(no>filenames.count - 1)
+				no	= 0;
+			change(no);
+			break;
+		case "svga":
+		case "xga":
+		case "qvga":
+			size	= btn.id;
+			break;
+		case "center":
+			tile	= magnify	= false;
+			break;
+		case "tile":
+			tile	= true;
+			magnify	= false;
+			break;
+		case "magnify":
+			tile	= false;
+			magnify	= true;
+			break;
+
+		case "set":
+			var wpfname	= filenames[curno]+"_"+size;
+			dm("壁紙ファイル: "+wpfname);
+			setwallpaper(wpfname, tile, magnify);
+			playSoundBuffer(setwp_se);
+			return;
+
+		case "back":
+			hide();
+			return;
+
+		default:
+			return;
+		}
+		playSoundBuffer(click_se);
+	}
+
+	function onMouseDown(x, y, button, shift)
+	{
+		if(button == mbLeft)
+		{
+			playSoundBuffer(click_se);
+			switchState();
+		}
+		else if(button == mbRight)
+		{
+			playSoundBuffer(return_se);
+			hide();
+		}
+	}
+
+	function onKeyDown(key, shift)
+	{
+		var proceed = true;
+		switch(key)
+		{
+		case VK_RETURN:
+		case VK_SPACE:
+			switchState();
+			proceed	= false;
+			break;
+		case VK_ESCAPE:
+		case VK_HOME:
+			hide();
+			proceed	= false;
+			break;
+		}
+		super.onKeyDown(key, shift, proceed);
+	}
+
+	function switchState()
+	{
+		if(state==0)
+		{
+			title.show(300, 0);
+			buttons.execAll("fade", 255, 300, 0);
+			sizebuttons.execAll("fade", 255, 300, 0);
+			modebuttons.execAll("fade", 255, 300, 0);
+		}
+		else
+		{
+			title.hide(300, 0);
+			buttons.execAll("fade", 0, 300, 0);
+			sizebuttons.execAll("fade", 0, 300, 0);
+			modebuttons.execAll("fade", 0, 300, 0);
+		}
+		_state	= (state + 1) & 1;
+	}
+
+	property state
+	{
+		setter(s)
+		{
+			if(s==0)
+			{
+				title.opacity	= 0;
+				buttons.setAll("opacity", 0);
+				sizebuttons.setAll("opacity", 0);
+				modebuttons.setAll("opacity", 0);
+				title.visible	= false;
+				buttons.setAll("visible", false);
+				sizebuttons.setAll("visible", false);
+				modebuttons.setAll("visible", false);
+			}
+			else
+			{
+				title.opacity	= 255;
+				buttons.setAll("opacity", 255);
+				sizebuttons.setAll("opacity", 255);
+				modebuttons.setAll("opacity", 255);
+				title.visible	= false;
+				buttons.setAll("visible", true);
+				sizebuttons.setAll("visible", true);
+				modebuttons.setAll("visible", true);
+			}
+			_state	= s;
+		}
+		getter	{ return _state; }
+	}
+}
+
+class GalleryImageFlipLayer extends HorizontalShrinkLayer
+{
+	var owner;
+
+	function GalleryImageFlipLayer(win, par, h, mw, c, stw, owner)
+	{
+		super.HorizontalShrinkLayer(...);
+		this.owner	= owner;
+		moveBehind(owner);
+		name	= "画像表示(FLIP)";
+	}
+
+	function finalize()
+	{
+		super.finalize(...);
+	}
+
+	function hide()
+	{
+		changeOrifice(0, time, accel, onHided);
+		state	= 0;
+	}
+
+	function show()	{ owner.show(...); }
+	function change()	{ owner.change(...); }
+	function onButtonDown()	{ owner.onButtonDown(...); }
+	function onMouseDown()	{ owner.onMouseDown(...); }
+	function onKeyDown()	{ owner.onKeyDown(...); }
+
+	function onTransitionCompleted()	{ owner.onTransitionCompleted(...); }
+/*	function onTransitionCompleted(dest, src)
+	{
+		super.onTransitionCompleted(...);
+		dm(@"completed. ${src.name} → ${dest.name}(${dest.left}, ${dest.top})");
+		dest.moveBehind(src);
+		dest.visible	= false;
+	}*/
+}
+
+/*-----------------------------------------------------------------------------
+/	End of File
+/----------------------------------------------------------------------------*/
+@endif

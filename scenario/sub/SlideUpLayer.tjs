@@ -1,0 +1,123 @@
+/*-----------------------------------------------------------------------------
+/	Copyright (C) TYPE-MOON All Rights Reserved.
+/		内容がスライドアップするレイヤー
+/----------------------------------------------------------------------------*/
+@if(__SLIDEUPLAYER_DEFINED__==0)
+@set(__SLIDEUPLAYER_DEFINED__=1)
+
+Scripts.execStorage("FadeLayer.tjs");
+
+class SlideUpLayer extends FadeLayer
+{
+	var baseleft, basetop;	//	表示位置(概念上の)
+	var time_slide	= 300;
+	var accel_slide	= 0;
+	var first_width, first_height;
+	var dest_width, dest_height;
+	var starttime;
+	var finishfunc;
+	var onslide;
+
+	function SlideUpLayer(win, par, l, t)
+	{
+		super.FadeLayer(win, par);
+		setBasePosition(l, t);
+		opacity	= 255;
+		onslide	= false;
+		hitThreshold	= 256;
+		name	= "SlideUpLayer";
+	}
+
+	function finalize()
+	{
+		stopSlide();
+		super.finalize(...);
+	}
+
+	function loadImages()
+	{
+		var ret = super.loadImages(...);
+		setSize(0, 0);
+		return ret;
+	}
+
+	function slideUp(time=void, accel=void, func=void)
+	{
+		first_width	= width	= imageWidth;
+		first_height= height;
+		dest_width	= width;
+		dest_height	= imageHeight;
+
+		startSlide(...);
+	}
+
+	function slideDown(time=void, accel=void, func=void)
+	{
+		first_width	= width	= imageWidth;
+		first_height= height;
+		dest_width	= width;
+		dest_height	= 0;
+
+		startSlide(...);
+	}
+
+	function startSlide(time=void, accel=void, func=void)
+	{
+		if(onslide)
+			stopSlide();
+
+		visible		= true;
+		time_slide	= time if time!==void;
+		accel_slide	= accel if accel!==void;
+		finishfunc	= func;
+		dest_width	-= first_width;
+		dest_height	-= first_height;
+
+		starttime	= System.getTickCount();
+		System.addContinuousHandler(slidehandler);
+		onslide	= true;
+	}
+
+	function slidehandler(tick)
+	{
+		var past	= tick - starttime;
+		if(past>=time_slide)
+			finishSlide();
+		else
+		{
+			var per = calcAccel(past / time_slide, accel_slide);
+			setSize(first_width+dest_width * per, first_height+dest_height * per);
+			setPos(baseleft+(imageWidth-width), basetop+(imageHeight-height));
+//			dm("size("+width+","+height+")-pos("+left+","+top+")");
+		}
+	}
+
+	function finishSlide()
+	{
+		stopSlide();
+		setSize(first_width+dest_width, first_height+dest_height);
+		setPos(baseleft, basetop);
+	}
+
+	function stopSlide()
+	{
+		if(onslide)
+		{
+			System.removeContinuousHandler(slidehandler);
+			onslide	= false;
+			if(finishfunc)
+				finishfunc();
+		}
+	}
+
+	function setBasePosition(l, t)
+	{
+		baseleft	= l;
+		basetop		= t;
+	}
+}
+
+/*----------------------------------------------------------------------------/
+/	
+/----------------------------------------------------------------------------*/
+@endif

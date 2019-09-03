@@ -1,0 +1,65 @@
+// startup.tjs - スタートアップスクリプト
+// Copyright (C) 2001, W.Dee  改変・配布は自由です
+
+//	自動検索パスの追加
+{
+	//	追加するパス(最後に必ず'/'を付けること)
+	//	後に登録したパスの方が優先的に検索される。
+	var path = [
+		"scenario/sub/",
+		"scenario/plugin/",
+		"scenario/menu/",
+
+		"bgimage/背景/遠/",
+		"bgimage/背景/中/",
+		"bgimage/背景/近/",
+		"bgimage/イメージ/",
+		"bgimage/イベント/",
+
+		"fgimage/セイバー鎧/遠/",
+		"fgimage/セイバー鎧/中/",
+		"fgimage/セイバー鎧/近/",
+		"fgimage/セイバー私服/遠/",
+		"fgimage/セイバー私服/中/",
+		"fgimage/セイバー私服/近/",
+		"fgimage/凛私服/遠/",
+		"fgimage/凛私服/中/",
+		"fgimage/凛私服/近/",
+		"fgimage/その他/遠/",
+		"fgimage/その他/中/",
+		"fgimage/その他/近/",
+
+		"image/buttons/",
+		"image/company/",
+		"image/config/",
+		"image/popup/",
+		"image/saveload/",
+		"image/scroll/",
+		"image/title/",
+		"image/yesno/",
+		"image/status/",
+		"image/glossary/",
+		"image/gallery/",
+		"image/soundtest/",
+		"image/thumbnail/",
+		"image/wallpaper/",
+		"image/name/",
+
+		"rule/default/",
+
+		"sound/system/",
+
+		"etc/",
+
+		"plugin/",
+	];
+	for(var i=path.count-1; i>=0; i--)
+	{
+		if(path[i]!==void)
+			Storages.addAutoPath(path[i]);
+	}
+	Storages.addAutoPath(System.exePath+"wallpaper/");	//	アーカイブにbmpを含めると壁紙として使えなくなってしまう。また、そのままaddAutoPathするとアーカイブから検索してしまうので、System.exePathを追加して絶対指定している。
+}
+
+// このスクリプトは一番最初に実行されるスクリプトです
+Scripts.execStorage("system/Initialize.tjs"); // system/Initialize.tjs を実行
